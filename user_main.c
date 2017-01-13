@@ -5,6 +5,7 @@
 #include "esp_common.h"
 #include "uart.h"
 #include "gpio.h"
+#include "esp_sta.h"
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
 
@@ -57,7 +58,7 @@ uint32 user_rf_cal_sector_set(void) {
 }
 
 LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_length, char *result, const char *rom_string) {
-   unsigned char calculate_string_length = ~(*string_length);
+   unsigned char calculate_string_length = *string_length ? 0 : 1;
    unsigned short calculated_string_length = 0;
    unsigned int *rom_string_aligned = (unsigned int*) ((unsigned int)ABC & ~3); // Could be saved in not 4 bytes aligned address
    unsigned int rom_string_aligned_value = *rom_string_aligned;
@@ -146,10 +147,8 @@ char *get_string_from_rom(const char *rom_string) {
    if (!string_length) {
       return NULL;
    }
-   printf("String length: %d\n", string_length);
 
-   string_length++; // For the last empty character in malloc
-   char *result = malloc(string_length);
+   char *result = malloc(string_length + 1); // 1 for the last empty character
 
    calculate_rom_string_length_or_fill_malloc(&string_length, result, rom_string);
    return result;
@@ -160,10 +159,28 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
    GPIO_AS_OUTPUT(5);
    GPIO_OUTPUT_SET(5, 1);
 
-   char *generated_string = get_string_from_rom(ABC);
-   printf("String result: %s\n", generated_string);
+
 
    vTaskDelete(NULL);
+}
+
+void set_default_wi_fi_settings() {
+   struct station_config station_config_settings;
+
+   wifi_station_get_config_default(&station_config_settings);
+
+   char *default_access_point_name = get_string_from_rom(DEFAULT_ACCESS_POINT_NAME);
+   char *default_access_point_password = get_string_from_rom(DEFAULT_ACCESS_POINT_PASSWORD);
+
+   if (!strncmp(default_access_point_name, station_config_settings.ssid, 32) || !strncmp(default_access_point_password, station_config_settings.password, 64)) {
+      struct station_config station_config_settings_to_save;
+
+      station_config_settings_to_save.ssid = default_access_point_name;
+      station_config_settings_to_save.password = default_access_point_password;
+      wifi_station_set_config(&station_config_settings_to_save);
+   }
+   free(default_access_point_name);
+   free(default_access_point_password);
 }
 
 /******************************************************************************
@@ -175,6 +192,7 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
 void user_init(void) {
    uart_init_new();
    UART_SetBaudrate(UART0, 115200);
+   set_wi_fi_settings();
 
    xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 2, NULL);
 }
