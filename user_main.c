@@ -10,6 +10,9 @@
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
 
+unsigned int milliseconds_g;
+LOCAL os_timer_t millisecons_time_serv_g;
+
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
  * Description  : SDK just reversed 4 sectors, used for rf init data and paramters.
@@ -132,6 +135,28 @@ LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_len
    }
 }
 
+void wifi_event_handler_callback(System_Event_t *event) {
+   SYSTEM_EVENT event_id = event->event_id;
+
+   if (event_id == EVENT_STAMODE_CONNECTED) {
+
+   }
+}
+
+LOCAL void milliseconds_counter() {
+   milliseconds_g++;
+}
+
+void start_millisecons_counter() {
+   os_timer_disarm(&millisecons_time_serv_g);
+   os_timer_setfn(&millisecons_time_serv_g, (os_timer_func_t *)milliseconds_counter, NULL);
+   os_timer_arm(&millisecons_time_serv_g, 1, 1); // 1 ms
+}
+
+void stop_milliseconds_counter() {
+   os_timer_disarm(&millisecons_time_serv_g);
+}
+
 /**
  * Do not forget to call free when a string is not required anymore
  */
@@ -159,9 +184,8 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
 }
 
 void set_default_wi_fi_settings() {
-   vTaskDelay(6000 / portTICK_RATE_MS);
-
    wifi_station_set_auto_connect(false);
+   wifi_station_dhcpc_stop();
    wifi_set_opmode(STATION_MODE);
 
    STATION_STATUS station_status = wifi_station_get_connect_status();
@@ -193,26 +217,32 @@ void set_default_wi_fi_settings() {
    char *own_ip_address = get_string_from_rom(ESP8226_OWN_IP_ADDRESS);
 
    if (strncmp(current_ip, own_ip_address, 15) != 0) {
+      char *own_netmask = get_string_from_rom(ESP8226_OWN_NETMASK);
+      char *own_getaway_address = get_string_from_rom(ESP8226_OWN_GETAWAY_ADDRESS);
       struct ip_info ip_info_to_set;
+
       ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
+      ip_info_to_set.netmask.addr = ipaddr_addr(own_netmask);
+      ip_info_to_set.gw.addr = ipaddr_addr(own_getaway_address);
       wifi_set_ip_info(STATION_IF, &ip_info_to_set);
+      free(own_netmask);
+      free(own_getaway_address);
    }
    free(current_ip);
    free(own_ip_address);
-
-   vTaskDelete(NULL);
 }
 
-/******************************************************************************
- * FunctionName : user_init
- * Description  : entry of user application, init user function here
- * Parameters   : none
- * Returns      : none
- *******************************************************************************/
+void establish_connection() {
+   wifi_station_connect(); // Do not call this API in user_init
+}
+
 void user_init(void) {
    uart_init_new();
    UART_SetBaudrate(UART0, 115200);
 
-   xTaskCreate(set_default_wi_fi_settings, "set_default_wi_fi_settings", 256, NULL, 9, NULL);
-   //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 9, NULL);
+   wifi_set_event_handler_cb(wifi_event_handler_callback);
+   set_default_wi_fi_settings();
+   establish_connection();
+
+   xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 9, NULL);
 }
