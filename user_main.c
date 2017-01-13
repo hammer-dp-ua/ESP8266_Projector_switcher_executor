@@ -1,5 +1,17 @@
+/**
+ * Pins 4 and 5 on some ESP8266-07 are exchanged on silk screen!!!
+ */
+
 #include "esp_common.h"
 #include "uart.h"
+#include "gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "device_settings.h"
+
+char *a = "abc";
+const char *b = "dfe";
+static const char *c = "gh";
+static const char ABC[] ICACHE_RODATA_ATTR = "ABCDEFG";
 
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
@@ -44,28 +56,114 @@ uint32 user_rf_cal_sector_set(void) {
    return rf_cal_sec;
 }
 
-LOCAL STATUS uart_tx_one_char(uint8 uart, uint8 TxChar) {
-   while (1) {
-      uint32 fifo_cnt = READ_PERI_REG(UART_STATUS(uart))
-            & (UART_TXFIFO_CNT << UART_TXFIFO_CNT_S);
+LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_length, char *result, const char *rom_string) {
+   unsigned char calculate_string_length = ~(*string_length);
+   unsigned short calculated_string_length = 0;
+   unsigned int *rom_string_aligned = (unsigned int*) ((unsigned int)ABC & ~3); // Could be saved in not 4 bytes aligned address
+   unsigned int rom_string_aligned_value = *rom_string_aligned;
+   unsigned char shifted_bytes = (unsigned char) ((unsigned int)rom_string - (unsigned int)rom_string_aligned); // 0 - 3
 
-      if ((fifo_cnt >> UART_TXFIFO_CNT_S & UART_TXFIFO_CNT) < 126) {
+   unsigned char shifted_bytes_tmp = shifted_bytes;
+   while (shifted_bytes_tmp < 4) {
+      unsigned int comparable = 0xFF;
+      unsigned char bytes_to_shift = shifted_bytes_tmp * 8;
+      comparable <<= bytes_to_shift;
+      unsigned int current_character_shifted = rom_string_aligned_value & comparable;
+
+      if (current_character_shifted == 0) {
          break;
       }
+      shifted_bytes_tmp++;
+
+      if (!calculate_string_length) {
+         char current_character = (char) (current_character_shifted >> bytes_to_shift);
+         *(result + calculated_string_length) = current_character;
+      }
+
+      calculated_string_length++;
    }
 
-   WRITE_PERI_REG(UART_FIFO(uart), TxChar);
-   return OK;
+   if (!calculated_string_length) {
+      return;
+   }
+
+   unsigned int *rom_string_aligned_next = rom_string_aligned + 1;
+   while (1) {
+      unsigned int shifted_tmp = 0xFF;
+      unsigned int rom_string_aligned_tmp_value = *rom_string_aligned_next;
+      unsigned char stop = 0;
+
+      while (shifted_tmp) {
+         unsigned int current_character_shifted = rom_string_aligned_tmp_value & shifted_tmp;
+
+         if (current_character_shifted == 0) {
+            stop = 1;
+            break;
+         }
+
+         if (!calculate_string_length) {
+            unsigned char bytes_to_shift;
+
+            if (shifted_tmp == 0xFF) {
+               bytes_to_shift = 0;
+            } else if (shifted_tmp == 0xFF00) {
+               bytes_to_shift = 8;
+            } else if (shifted_tmp == 0xFF0000) {
+               bytes_to_shift = 16;
+            } else {
+               bytes_to_shift = 24;
+            }
+
+            char current_character = (char) (current_character_shifted >> bytes_to_shift);
+            *(result + calculated_string_length) = current_character;
+         }
+
+         calculated_string_length++;
+         shifted_tmp <<= 8;
+      }
+
+      if (stop) {
+         break;
+      }
+      rom_string_aligned_next++;
+   }
+
+   if (calculate_string_length) {
+      *string_length = calculated_string_length;
+   } else {
+      *(result + *string_length) = '\0';
+   }
 }
 
-LOCAL void uart0_write_char(char c) {
-   if (c == '\n') {
-      uart_tx_one_char(UART0, '\r');
-      uart_tx_one_char(UART0, '\n');
-   } else if (c == '\r') {
-   } else {
-      uart_tx_one_char(UART0, c);
+/**
+ * Do not forget to call free when a string is not required anymore
+ */
+char *get_string_from_rom(const char *rom_string) {
+   unsigned short string_length = 0;
+
+   calculate_rom_string_length_or_fill_malloc(&string_length, NULL, rom_string);
+
+   if (!string_length) {
+      return NULL;
    }
+   printf("String length: %d\n", string_length);
+
+   string_length++; // For the last empty character in malloc
+   char *result = malloc(string_length);
+
+   calculate_rom_string_length_or_fill_malloc(&string_length, result, rom_string);
+   return result;
+}
+
+void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
+   vTaskDelay(6000 / portTICK_RATE_MS);
+   GPIO_AS_OUTPUT(5);
+   GPIO_OUTPUT_SET(5, 1);
+
+   char *generated_string = get_string_from_rom(ABC);
+   printf("String result: %s\n", generated_string);
+
+   vTaskDelete(NULL);
 }
 
 /******************************************************************************
@@ -75,17 +173,8 @@ LOCAL void uart0_write_char(char c) {
  * Returns      : none
  *******************************************************************************/
 void user_init(void) {
-   UART_ConfigTypeDef uartConfig;
-   uartConfig.baud_rate = BIT_RATE_115200;
-   uartConfig.data_bits = UART_WordLength_8b;
-   uartConfig.parity = USART_Parity_None;
-   uartConfig.stop_bits = USART_StopBits_1;
-   uartConfig.flow_ctrl = USART_HardwareFlowControl_None;
-   uartConfig.UART_RxFlowThresh = 120;
-   uartConfig.UART_InverseMask = UART_None_Inverse;
+   uart_init_new();
+   UART_SetBaudrate(UART0, 115200);
 
-   UART_ParamConfig(UART0, &uartConfig);
-   os_install_putc1(uart0_write_char);
-
-   os_printf("aaakkkkkk:%s\n", system_get_sdk_version());
+   xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 2, NULL);
 }
