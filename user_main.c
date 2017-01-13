@@ -6,13 +6,9 @@
 #include "uart.h"
 #include "gpio.h"
 #include "esp_sta.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
-
-char *a = "abc";
-const char *b = "dfe";
-static const char *c = "gh";
-static const char ABC[] ICACHE_RODATA_ATTR = "ABCDEFG";
 
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
@@ -60,7 +56,7 @@ uint32 user_rf_cal_sector_set(void) {
 LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_length, char *result, const char *rom_string) {
    unsigned char calculate_string_length = *string_length ? 0 : 1;
    unsigned short calculated_string_length = 0;
-   unsigned int *rom_string_aligned = (unsigned int*) ((unsigned int)ABC & ~3); // Could be saved in not 4 bytes aligned address
+   unsigned int *rom_string_aligned = (unsigned int*) ((unsigned int)rom_string & ~3); // Could be saved in not 4 bytes aligned address
    unsigned int rom_string_aligned_value = *rom_string_aligned;
    unsigned char shifted_bytes = (unsigned char) ((unsigned int)rom_string - (unsigned int)rom_string_aligned); // 0 - 3
 
@@ -159,12 +155,20 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
    GPIO_AS_OUTPUT(5);
    GPIO_OUTPUT_SET(5, 1);
 
-
-
    vTaskDelete(NULL);
 }
 
 void set_default_wi_fi_settings() {
+   vTaskDelay(6000 / portTICK_RATE_MS);
+
+   wifi_station_set_auto_connect(false);
+   wifi_set_opmode(STATION_MODE);
+
+   STATION_STATUS station_status = wifi_station_get_connect_status();
+   if (station_status == STATION_GOT_IP) {
+      wifi_station_disconnect();
+   }
+
    struct station_config station_config_settings;
 
    wifi_station_get_config_default(&station_config_settings);
@@ -172,15 +176,31 @@ void set_default_wi_fi_settings() {
    char *default_access_point_name = get_string_from_rom(DEFAULT_ACCESS_POINT_NAME);
    char *default_access_point_password = get_string_from_rom(DEFAULT_ACCESS_POINT_PASSWORD);
 
-   if (!strncmp(default_access_point_name, station_config_settings.ssid, 32) || !strncmp(default_access_point_password, station_config_settings.password, 64)) {
+   if (strncmp(default_access_point_name, station_config_settings.ssid, 32) != 0
+         || strncmp(default_access_point_password, station_config_settings.password, 64) != 0) {
       struct station_config station_config_settings_to_save;
 
-      station_config_settings_to_save.ssid = default_access_point_name;
-      station_config_settings_to_save.password = default_access_point_password;
+      memcpy(&station_config_settings_to_save.ssid, default_access_point_name, 32);
+      memcpy(&station_config_settings_to_save.password, default_access_point_password, 64);
       wifi_station_set_config(&station_config_settings_to_save);
    }
    free(default_access_point_name);
    free(default_access_point_password);
+
+   struct ip_info current_ip_info;
+   wifi_get_ip_info(STATION_IF, &current_ip_info);
+   char *current_ip = ipaddr_ntoa(&current_ip_info.ip);
+   char *own_ip_address = get_string_from_rom(ESP8226_OWN_IP_ADDRESS);
+
+   if (strncmp(current_ip, own_ip_address, 15) != 0) {
+      struct ip_info ip_info_to_set;
+      ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
+      wifi_set_ip_info(STATION_IF, &ip_info_to_set);
+   }
+   free(current_ip);
+   free(own_ip_address);
+
+   vTaskDelete(NULL);
 }
 
 /******************************************************************************
@@ -192,7 +212,7 @@ void set_default_wi_fi_settings() {
 void user_init(void) {
    uart_init_new();
    UART_SetBaudrate(UART0, 115200);
-   set_wi_fi_settings();
 
-   xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 2, NULL);
+   xTaskCreate(set_default_wi_fi_settings, "set_default_wi_fi_settings", 256, NULL, 9, NULL);
+   //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 9, NULL);
 }
