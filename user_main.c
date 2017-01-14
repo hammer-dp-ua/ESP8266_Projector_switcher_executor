@@ -10,6 +10,9 @@
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
 
+#define AP_CONNECTION_STATUS_LED_PIN 5
+#define SERVER_AVAILABILITY_STATUS_LED_PIN 4
+
 unsigned int milliseconds_g;
 LOCAL os_timer_t millisecons_time_serv_g;
 
@@ -30,27 +33,27 @@ uint32 user_rf_cal_sector_set(void) {
    uint32 rf_cal_sec = 0;
 
    switch (size_map) {
-   case FLASH_SIZE_4M_MAP_256_256:
-      rf_cal_sec = 128 - 5;
-      break;
+      case FLASH_SIZE_4M_MAP_256_256:
+         rf_cal_sec = 128 - 5;
+         break;
 
-   case FLASH_SIZE_8M_MAP_512_512:
-      rf_cal_sec = 256 - 5;
-      break;
+      case FLASH_SIZE_8M_MAP_512_512:
+         rf_cal_sec = 256 - 5;
+         break;
 
-   case FLASH_SIZE_16M_MAP_512_512:
-   case FLASH_SIZE_16M_MAP_1024_1024:
-      rf_cal_sec = 512 - 5;
-      break;
+      case FLASH_SIZE_16M_MAP_512_512:
+      case FLASH_SIZE_16M_MAP_1024_1024:
+         rf_cal_sec = 512 - 5;
+         break;
 
-   case FLASH_SIZE_32M_MAP_512_512:
-   case FLASH_SIZE_32M_MAP_1024_1024:
-      rf_cal_sec = 1024 - 5;
-      break;
+      case FLASH_SIZE_32M_MAP_512_512:
+      case FLASH_SIZE_32M_MAP_1024_1024:
+         rf_cal_sec = 1024 - 5;
+         break;
 
-   default:
-      rf_cal_sec = 0;
-      break;
+      default:
+         rf_cal_sec = 0;
+         break;
    }
 
    return rf_cal_sec;
@@ -136,10 +139,14 @@ LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_len
 }
 
 void wifi_event_handler_callback(System_Event_t *event) {
-   SYSTEM_EVENT event_id = event->event_id;
+   switch (event->event_id) {
+      case EVENT_STAMODE_CONNECTED:
+         GPIO_OUTPUT_SET(AP_CONNECTION_STATUS_LED_PIN, 1);
+         break;
 
-   if (event_id == EVENT_STAMODE_CONNECTED) {
-
+      case EVENT_STAMODE_DISCONNECTED:
+         GPIO_OUTPUT_SET(AP_CONNECTION_STATUS_LED_PIN, 0);
+         break;
    }
 }
 
@@ -177,14 +184,13 @@ char *get_string_from_rom(const char *rom_string) {
 
 void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
    vTaskDelay(6000 / portTICK_RATE_MS);
-   GPIO_AS_OUTPUT(5);
-   GPIO_OUTPUT_SET(5, 1);
 
    vTaskDelete(NULL);
 }
 
 void set_default_wi_fi_settings() {
    wifi_station_set_auto_connect(false);
+   wifi_station_set_reconnect_policy(false);
    wifi_station_dhcpc_stop();
    wifi_set_opmode(STATION_MODE);
 
@@ -232,17 +238,33 @@ void set_default_wi_fi_settings() {
    free(own_ip_address);
 }
 
-void establish_connection() {
-   wifi_station_connect(); // Do not call this API in user_init
+void autoconnect_task() {
+   long task_delay = 10000 / portTICK_RATE_MS;
+
+   for (;;) {
+      STATION_STATUS status = wifi_station_get_connect_status();
+
+      if (status != STATION_GOT_IP && status != STATION_CONNECTING) {
+         wifi_station_connect(); // Do not call this API in user_init
+      }
+      vTaskDelay(task_delay);
+   }
+   vTaskDelete(NULL);
+}
+
+pins_config() {
+   GPIO_AS_OUTPUT(AP_CONNECTION_STATUS_LED_PIN);
+   GPIO_AS_OUTPUT(SERVER_AVAILABILITY_STATUS_LED_PIN);
 }
 
 void user_init(void) {
    uart_init_new();
    UART_SetBaudrate(UART0, 115200);
 
+   pins_config();
    wifi_set_event_handler_cb(wifi_event_handler_callback);
    set_default_wi_fi_settings();
-   establish_connection();
 
-   xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 9, NULL);
+   xTaskCreate(autoconnect_task, "autoconnect_task", 176, NULL, 9, NULL);
+   //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 176, NULL, 9, NULL);
 }
