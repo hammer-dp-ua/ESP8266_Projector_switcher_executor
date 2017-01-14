@@ -9,11 +9,10 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
-
-#define AP_CONNECTION_STATUS_LED_PIN 5
-#define SERVER_AVAILABILITY_STATUS_LED_PIN 4
+#include "user_main.h"
 
 unsigned int milliseconds_g;
+int signal_strength_g;
 LOCAL os_timer_t millisecons_time_serv_g;
 
 /******************************************************************************
@@ -188,6 +187,38 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
    vTaskDelete(NULL);
 }
 
+// Callback function when AP scanning is completed
+void get_ap_signal_strength(void *arg, STATUS status) {
+   if (status == OK) {
+      struct bss_info *got_bss_info = (struct bss_info *)arg;
+
+      signal_strength_g = got_bss_info->rssi;
+      //got_bss_info = got_bss_info->next.stqe_next;
+   }
+}
+
+void scan_access_point_task(void *pvParameters) {
+   long rescan_when_connected_task_delay = 10 * 60 * 1000 / portTICK_RATE_MS; // 10 mins
+   long rescan_when_not_connected_task_delay = 10 * 1000 / portTICK_RATE_MS; // 10 secs
+
+   for (;;) {
+      STATION_STATUS status = wifi_station_get_connect_status();
+
+      if (status == STATION_GOT_IP) {
+         struct scan_config ap_scan_config;
+         char *default_access_point_name = get_string_from_rom(DEFAULT_ACCESS_POINT_NAME);
+
+         ap_scan_config.ssid = default_access_point_name;
+         wifi_station_scan(&ap_scan_config, get_ap_signal_strength);
+         free(default_access_point_name);
+
+         vTaskDelay(rescan_when_connected_task_delay);
+      } else {
+         vTaskDelay(rescan_when_not_connected_task_delay);
+      }
+   }
+}
+
 void set_default_wi_fi_settings() {
    wifi_station_set_auto_connect(false);
    wifi_station_set_reconnect_policy(false);
@@ -238,7 +269,7 @@ void set_default_wi_fi_settings() {
    free(own_ip_address);
 }
 
-void autoconnect_task() {
+void autoconnect_task(void *pvParameters) {
    long task_delay = 10000 / portTICK_RATE_MS;
 
    for (;;) {
@@ -249,7 +280,6 @@ void autoconnect_task() {
       }
       vTaskDelay(task_delay);
    }
-   vTaskDelete(NULL);
 }
 
 pins_config() {
@@ -266,5 +296,6 @@ void user_init(void) {
    set_default_wi_fi_settings();
 
    xTaskCreate(autoconnect_task, "autoconnect_task", 176, NULL, 9, NULL);
+   xTaskCreate(scan_access_point_task, "scan_access_point_task", 176, NULL, 9, NULL);
    //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 176, NULL, 9, NULL);
 }
