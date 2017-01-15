@@ -58,6 +58,22 @@ uint32 user_rf_cal_sector_set(void) {
    return rf_cal_sec;
 }
 
+/**
+ * @param pin : GPIO pin GPIO_Pin_x
+ */
+void gpio_output_set(unsigned int pin) {
+   GPIO_REG_WRITE(GPIO_OUT_W1TS_ADDRESS, pin);
+   GPIO_REG_WRITE(GPIO_ENABLE_W1TS_ADDRESS, pin);
+}
+
+/**
+ * @param pin : GPIO pin GPIO_Pin_x
+ */
+void gpio_output_reset(unsigned int pin) {
+   GPIO_REG_WRITE(GPIO_OUT_W1TC_ADDRESS, pin);
+   GPIO_REG_WRITE(GPIO_ENABLE_W1TC_ADDRESS, pin);
+}
+
 LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_length, char *result, const char *rom_string) {
    unsigned char calculate_string_length = *string_length ? 0 : 1;
    unsigned short calculated_string_length = 0;
@@ -140,11 +156,10 @@ LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_len
 void wifi_event_handler_callback(System_Event_t *event) {
    switch (event->event_id) {
       case EVENT_STAMODE_CONNECTED:
-         GPIO_OUTPUT_SET(AP_CONNECTION_STATUS_LED_PIN, 1);
+         gpio_output_set(AP_CONNECTION_STATUS_LED_PIN);
          break;
-
       case EVENT_STAMODE_DISCONNECTED:
-         GPIO_OUTPUT_SET(AP_CONNECTION_STATUS_LED_PIN, 0);
+         gpio_output_reset(AP_CONNECTION_STATUS_LED_PIN);
          break;
    }
 }
@@ -181,12 +196,6 @@ char *get_string_from_rom(const char *rom_string) {
    return result;
 }
 
-void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
-   vTaskDelay(6000 / portTICK_RATE_MS);
-
-   vTaskDelete(NULL);
-}
-
 // Callback function when AP scanning is completed
 void get_ap_signal_strength(void *arg, STATUS status) {
    if (status == OK) {
@@ -217,6 +226,25 @@ void scan_access_point_task(void *pvParameters) {
          vTaskDelay(rescan_when_not_connected_task_delay);
       }
    }
+}
+
+void autoconnect_task(void *pvParameters) {
+   long task_delay = 10000 / portTICK_RATE_MS;
+
+   for (;;) {
+      STATION_STATUS status = wifi_station_get_connect_status();
+
+      if (status != STATION_GOT_IP && status != STATION_CONNECTING) {
+         wifi_station_connect(); // Do not call this API in user_init
+      }
+      vTaskDelay(task_delay);
+   }
+}
+
+void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
+   vTaskDelay(6000 / portTICK_RATE_MS);
+
+   vTaskDelete(NULL);
 }
 
 void set_default_wi_fi_settings() {
@@ -269,22 +297,13 @@ void set_default_wi_fi_settings() {
    free(own_ip_address);
 }
 
-void autoconnect_task(void *pvParameters) {
-   long task_delay = 10000 / portTICK_RATE_MS;
-
-   for (;;) {
-      STATION_STATUS status = wifi_station_get_connect_status();
-
-      if (status != STATION_GOT_IP && status != STATION_CONNECTING) {
-         wifi_station_connect(); // Do not call this API in user_init
-      }
-      vTaskDelay(task_delay);
-   }
-}
-
 pins_config() {
-   GPIO_AS_OUTPUT(AP_CONNECTION_STATUS_LED_PIN);
-   GPIO_AS_OUTPUT(SERVER_AVAILABILITY_STATUS_LED_PIN);
+   GPIO_ConfigTypeDef output_pins;
+   //output_pins.GPIO_IntrType = GPIO_PIN_INTR_ANYEDGE;
+   output_pins.GPIO_Mode = GPIO_Mode_Output;
+   output_pins.GPIO_Pin = AP_CONNECTION_STATUS_LED_PIN | SERVER_AVAILABILITY_STATUS_LED_PIN | PROJECTOR_RELAY_PIN;
+   //output_pins.GPIO_Pullup = GPIO_PullUp_DIS;
+   gpio_config(&output_pins);
 }
 
 void user_init(void) {
@@ -294,8 +313,7 @@ void user_init(void) {
    pins_config();
    wifi_set_event_handler_cb(wifi_event_handler_callback);
    set_default_wi_fi_settings();
-
-   xTaskCreate(autoconnect_task, "autoconnect_task", 176, NULL, 9, NULL);
-   xTaskCreate(scan_access_point_task, "scan_access_point_task", 176, NULL, 9, NULL);
-   //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 176, NULL, 9, NULL);
+   xTaskCreate(autoconnect_task, "autoconnect_task", 176, NULL, 1, NULL);
+   xTaskCreate(scan_access_point_task, "scan_access_point_task", 176, NULL, 1, NULL);
+   //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 176, NULL, 1, NULL);
 }
