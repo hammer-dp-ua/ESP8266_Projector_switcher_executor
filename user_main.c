@@ -10,10 +10,14 @@
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
 #include "user_main.h"
+#include "espconn.h"
 
 unsigned int milliseconds_g;
 int signal_strength_g;
 LOCAL os_timer_t millisecons_time_serv_g;
+
+struct espconn connection;
+struct _esp_tcp user_tcp;
 
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
@@ -61,7 +65,7 @@ uint32 user_rf_cal_sector_set(void) {
 /**
  * @param pin : GPIO pin GPIO_Pin_x
  */
-void gpio_output_set(unsigned int pin) {
+void pin_output_set(unsigned int pin) {
    GPIO_REG_WRITE(GPIO_OUT_W1TS_ADDRESS, pin);
    GPIO_REG_WRITE(GPIO_ENABLE_W1TS_ADDRESS, pin);
 }
@@ -69,7 +73,7 @@ void gpio_output_set(unsigned int pin) {
 /**
  * @param pin : GPIO pin GPIO_Pin_x
  */
-void gpio_output_reset(unsigned int pin) {
+void pin_output_reset(unsigned int pin) {
    GPIO_REG_WRITE(GPIO_OUT_W1TC_ADDRESS, pin);
    GPIO_REG_WRITE(GPIO_ENABLE_W1TC_ADDRESS, pin);
 }
@@ -156,10 +160,11 @@ LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_len
 void wifi_event_handler_callback(System_Event_t *event) {
    switch (event->event_id) {
       case EVENT_STAMODE_CONNECTED:
-         gpio_output_set(AP_CONNECTION_STATUS_LED_PIN);
+         pin_output_set(AP_CONNECTION_STATUS_LED_PIN);
+         xTaskCreate(send_request_task, "send_request_task", 176, NULL, 1, NULL);
          break;
       case EVENT_STAMODE_DISCONNECTED:
-         gpio_output_reset(AP_CONNECTION_STATUS_LED_PIN);
+         pin_output_reset(AP_CONNECTION_STATUS_LED_PIN);
          break;
    }
 }
@@ -215,7 +220,7 @@ void scan_access_point_task(void *pvParameters) {
 
       if (status == STATION_GOT_IP) {
          struct scan_config ap_scan_config;
-         char *default_access_point_name = get_string_from_rom(DEFAULT_ACCESS_POINT_NAME);
+         char *default_access_point_name = get_string_from_rom(ACCESS_POINT_NAME);
 
          ap_scan_config.ssid = default_access_point_name;
          wifi_station_scan(&ap_scan_config, get_ap_signal_strength);
@@ -247,6 +252,77 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
    vTaskDelete(NULL);
 }
 
+void successfull_connected_tcp_handler_callback() {
+   printf("Connected callback\n");
+   char *request = "POST /server/esp8266/statusInfo HTTP/1.1\r\nContent-Length: 43\r\nHost: 192.168.0.2\r\nUser-Agent: ESP8266\r\nContent-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\n\r\n{\"gain\":\"-1\",\"deviceName\":\"Some Projector\"}\r\n";
+   unsigned short request_length = strnlen(request, 65535);
+   espconn_send(&connection, request, request_length);
+}
+
+void successfull_disconnected_tcp_handler_callback() {
+   printf("Disconnected callback\n");
+}
+
+void tcp_connection_error_handler_callback(void *arg, sint8 err) {
+   printf("Connection error callback. Error code: %d\n", err);
+}
+
+void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned short len) {
+   printf("Response received callback. Content: %s, length: %d\n", pdata, len);
+}
+
+void tcp_request_successfully_sent_handler_callback() {
+   printf("Request sent callback\n");
+}
+
+void tcp_request_successfully_written_into_buffer_handler_callback() {
+   printf("Request written into buffer callback\n");
+}
+
+void send_request_task(void *pvParameters) {
+   vTaskDelay(5000 / portTICK_RATE_MS);
+
+   connection.type = ESPCONN_TCP;
+   connection.state = ESPCONN_NONE;
+
+   // remote IP of TCP server
+   unsigned char tcp_server_ip[] = {SERVER_IP_ADDRESS_1, SERVER_IP_ADDRESS_2, SERVER_IP_ADDRESS_3, SERVER_IP_ADDRESS_4};
+
+   connection.proto.tcp = &user_tcp;
+   memcpy(&connection.proto.tcp->remote_ip, tcp_server_ip, 4);
+   connection.proto.tcp->remote_port = SERVER_PORT;
+   connection.proto.tcp->local_port = espconn_port(); //local port of ESP8266
+
+   espconn_regist_connectcb(&connection, successfull_connected_tcp_handler_callback);
+   espconn_regist_disconcb(&connection, successfull_disconnected_tcp_handler_callback);
+   espconn_regist_reconcb(&connection, tcp_connection_error_handler_callback);
+   espconn_regist_recvcb(&connection, tcp_response_received_handler_callback);
+   espconn_regist_sentcb(&connection, tcp_request_successfully_sent_handler_callback);
+   //espconn_regist_write_finish(&connection, tcp_request_successfully_written_into_buffer_handler_callback);
+   int connection_status = espconn_connect(&connection);
+
+   printf("Connection status: ");
+   switch (connection_status) {
+      case ESPCONN_OK:
+         printf("Connected\n");
+         break;
+      case ESPCONN_RTE:
+         printf("Routing problem\n");
+         break;
+      case ESPCONN_MEM:
+         printf("Out of memory\n");
+         break;
+      case ESPCONN_ISCONN:
+         printf("Already connected\n");
+         break;
+      case ESPCONN_ARG:
+         printf("Illegal argument\n");
+         break;
+   }
+
+   vTaskDelete(NULL);
+}
+
 void set_default_wi_fi_settings() {
    wifi_station_set_auto_connect(false);
    wifi_station_set_reconnect_policy(false);
@@ -262,8 +338,8 @@ void set_default_wi_fi_settings() {
 
    wifi_station_get_config_default(&station_config_settings);
 
-   char *default_access_point_name = get_string_from_rom(DEFAULT_ACCESS_POINT_NAME);
-   char *default_access_point_password = get_string_from_rom(DEFAULT_ACCESS_POINT_PASSWORD);
+   char *default_access_point_name = get_string_from_rom(ACCESS_POINT_NAME);
+   char *default_access_point_password = get_string_from_rom(ACCESS_POINT_PASSWORD);
 
    if (strncmp(default_access_point_name, station_config_settings.ssid, 32) != 0
          || strncmp(default_access_point_password, station_config_settings.password, 64) != 0) {
@@ -279,11 +355,11 @@ void set_default_wi_fi_settings() {
    struct ip_info current_ip_info;
    wifi_get_ip_info(STATION_IF, &current_ip_info);
    char *current_ip = ipaddr_ntoa(&current_ip_info.ip);
-   char *own_ip_address = get_string_from_rom(ESP8226_OWN_IP_ADDRESS);
+   char *own_ip_address = get_string_from_rom(OWN_IP_ADDRESS);
 
    if (strncmp(current_ip, own_ip_address, 15) != 0) {
-      char *own_netmask = get_string_from_rom(ESP8226_OWN_NETMASK);
-      char *own_getaway_address = get_string_from_rom(ESP8226_OWN_GETAWAY_ADDRESS);
+      char *own_netmask = get_string_from_rom(OWN_NETMASK);
+      char *own_getaway_address = get_string_from_rom(OWN_GETAWAY_ADDRESS);
       struct ip_info ip_info_to_set;
 
       ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
@@ -296,6 +372,7 @@ void set_default_wi_fi_settings() {
    free(current_ip);
    free(own_ip_address);
 }
+
 
 pins_config() {
    GPIO_ConfigTypeDef output_pins;
@@ -313,6 +390,8 @@ void user_init(void) {
    pins_config();
    wifi_set_event_handler_cb(wifi_event_handler_callback);
    set_default_wi_fi_settings();
+   espconn_init();
+
    xTaskCreate(autoconnect_task, "autoconnect_task", 176, NULL, 1, NULL);
    xTaskCreate(scan_access_point_task, "scan_access_point_task", 176, NULL, 1, NULL);
    //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 176, NULL, 1, NULL);

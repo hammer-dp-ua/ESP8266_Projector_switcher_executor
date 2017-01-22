@@ -1,7 +1,7 @@
 #!/bin/bash
 
 linux_project_dir=/home/esp8266/Desktop/ESP8266_RTOS_SDK/examples/project_template
-windows_project_dir=/home/esp8266/Desktop/ESP8266_Projector_switcher_executor
+windows_project_dir=/home/esp8266/Desktop/Projector_switcher_executor
 xtensa_compiler_dir=/opt/xtensa-lx106-elf
 
 cp -f $windows_project_dir/user_main.c $linux_project_dir/user
