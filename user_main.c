@@ -16,8 +16,10 @@ unsigned int milliseconds_g;
 int signal_strength_g;
 LOCAL os_timer_t millisecons_time_serv_g;
 
-struct espconn connection;
 struct _esp_tcp user_tcp;
+
+unsigned char responses_index;
+char *responses[10];
 
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
@@ -161,7 +163,7 @@ void wifi_event_handler_callback(System_Event_t *event) {
    switch (event->event_id) {
       case EVENT_STAMODE_CONNECTED:
          pin_output_set(AP_CONNECTION_STATUS_LED_PIN);
-         xTaskCreate(send_request_task, "send_request_task", 176, NULL, 1, NULL);
+         xTaskCreate(send_request_task, "send_request_task", 256, NULL, 1, NULL);
          break;
       case EVENT_STAMODE_DISCONNECTED:
          pin_output_reset(AP_CONNECTION_STATUS_LED_PIN);
@@ -226,9 +228,9 @@ void scan_access_point_task(void *pvParameters) {
          wifi_station_scan(&ap_scan_config, get_ap_signal_strength);
          free(default_access_point_name);
 
-         vTaskDelay(rescan_when_connected_task_delay);
-      } else {
          vTaskDelay(rescan_when_not_connected_task_delay);
+      } else {
+         vTaskDelay(rescan_when_connected_task_delay);
       }
    }
 }
@@ -252,11 +254,15 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
    vTaskDelete(NULL);
 }
 
-void successfull_connected_tcp_handler_callback() {
+void successfull_connected_tcp_handler_callback(void *arg) {
+   struct espconn *connection = arg;
+
+   espconn_regist_recvcb(connection, tcp_response_received_handler_callback);
+
    printf("Connected callback\n");
    char *request = "POST /server/esp8266/statusInfo HTTP/1.1\r\nContent-Length: 43\r\nHost: 192.168.0.2\r\nUser-Agent: ESP8266\r\nContent-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\n\r\n{\"gain\":\"-1\",\"deviceName\":\"Some Projector\"}\r\n";
    unsigned short request_length = strnlen(request, 65535);
-   espconn_send(&connection, request, request_length);
+   espconn_send(connection, request, request_length);
 }
 
 void successfull_disconnected_tcp_handler_callback() {
@@ -268,7 +274,11 @@ void tcp_connection_error_handler_callback(void *arg, sint8 err) {
 }
 
 void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned short len) {
-   printf("Response received callback. Content: %s, length: %d\n", pdata, len);
+   struct espconn *connection = arg;
+
+   printf("Response: %s\n", pdata);
+
+   espconn_disconnect(connection);
 }
 
 void tcp_request_successfully_sent_handler_callback() {
@@ -281,6 +291,8 @@ void tcp_request_successfully_written_into_buffer_handler_callback() {
 
 void send_request_task(void *pvParameters) {
    vTaskDelay(5000 / portTICK_RATE_MS);
+
+   struct espconn connection;
 
    connection.type = ESPCONN_TCP;
    connection.state = ESPCONN_NONE;
@@ -296,7 +308,6 @@ void send_request_task(void *pvParameters) {
    espconn_regist_connectcb(&connection, successfull_connected_tcp_handler_callback);
    espconn_regist_disconcb(&connection, successfull_disconnected_tcp_handler_callback);
    espconn_regist_reconcb(&connection, tcp_connection_error_handler_callback);
-   espconn_regist_recvcb(&connection, tcp_response_received_handler_callback);
    espconn_regist_sentcb(&connection, tcp_request_successfully_sent_handler_callback);
    //espconn_regist_write_finish(&connection, tcp_request_successfully_written_into_buffer_handler_callback);
    int connection_status = espconn_connect(&connection);
