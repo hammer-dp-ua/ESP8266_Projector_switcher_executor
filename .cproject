@@ -23,11 +23,11 @@
 								<option defaultValue="gnu.c.optimization.level.none" id="gnu.c.compiler.option.optimization.level.391515222" name="Optimization Level" superClass="gnu.c.compiler.option.optimization.level" useByScannerDiscovery="false" valueType="enumerated"/>
 								<option id="gnu.c.compiler.option.debugging.level.2138631015" name="Debug Level" superClass="gnu.c.compiler.option.debugging.level" useByScannerDiscovery="false" value="gnu.c.debugging.level.max" valueType="enumerated"/>
 								<option id="gnu.c.compiler.option.include.paths.1547122722" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;C:\Users\UserSpace\ESP866\ESP8266_RTOS_SDK\include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Users\UserSpace\ESP866\ESP8266_RTOS_SDK\include\freertos&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Users\UserSpace\ESP866\ESP8266_RTOS_SDK\include\espressif&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Users\UserSpace\ESP866\ESP8266_RTOS_SDK\include\espressif\esp8266&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Users\UserSpace\ESP866\ESP8266_RTOS_SDK\driver_lib\include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\USER\ESP866\ESP8266_RTOS_SDK\include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\USER\ESP866\ESP8266_RTOS_SDK\include\freertos&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\USER\ESP866\ESP8266_RTOS_SDK\include\espressif&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\USER\ESP866\ESP8266_RTOS_SDK\include\espressif\esp8266&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\USER\ESP866\ESP8266_RTOS_SDK\driver_lib\include&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1345520628" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
