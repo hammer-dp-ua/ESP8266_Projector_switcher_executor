@@ -1,7 +1,9 @@
 #define AP_CONNECTION_STATUS_LED_PIN GPIO_Pin_5
 #define SERVER_AVAILABILITY_STATUS_LED_PIN GPIO_Pin_4
 #define PROJECTOR_RELAY_PIN GPIO_Pin_14
- 
+
+char RESPONSE_OK_STATUS[] ICACHE_RODATA_ATTR = "200 OK";
+
 void scan_access_point_task(void *pvParameters);
 void send_request_task(void *pvParameters);
 void autoconnect_task(void *pvParameters);
@@ -11,3 +13,8 @@ void tcp_connection_error_handler_callback(void *arg, sint8 err);
 void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned short len);
 void tcp_request_successfully_sent_handler_callback();
 void tcp_request_successfully_written_into_buffer_handler_callback();
+
+struct connection_user_data {
+   unsigned char response_part_counter;
+   char *request;
+};

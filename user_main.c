@@ -21,7 +21,7 @@ struct _esp_tcp user_tcp;
 unsigned char responses_index;
 char *responses[10];
 
-char REQUEST[] ICACHE_RODATA_ATTR = "POST /server/esp8266/statusInfo HTTP/1.1\r\nContent-Length: 43\r\nHost: 192.168.0.2\r\nUser-Agent: ESP8266\r\nContent-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\n\r\n{\"gain\":\"-1\",\"deviceName\":\"Some Projector\"}\r\n";
+char REQUEST[] ICACHE_RODATA_ATTR = "POST /server/esp8266/projectorDeferred HTTP/1.1\r\nContent-Length: 43\r\nHost: 192.168.0.2\r\nUser-Agent: ESP8266\r\nContent-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\n\r\n{\"gain\":\"-1\",\"deviceName\":\"Some Projector\"}\r\n";
 
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
@@ -161,17 +161,6 @@ LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_len
    }
 }
 
-void wifi_event_handler_callback(System_Event_t *event) {
-   switch (event->event_id) {
-      case EVENT_STAMODE_CONNECTED:
-         pin_output_set(AP_CONNECTION_STATUS_LED_PIN);
-         break;
-      case EVENT_STAMODE_DISCONNECTED:
-         pin_output_reset(AP_CONNECTION_STATUS_LED_PIN);
-         break;
-   }
-}
-
 LOCAL void milliseconds_counter() {
    milliseconds_g++;
 }
@@ -256,17 +245,24 @@ void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
 }
 
 void successfull_connected_tcp_handler_callback(void *arg) {
-   //printf("Task name in successfull_connected_tcp_handler_callback: %s\n", pcTaskGetTaskName(NULL));
+   printf("successfull_connected_tcp_handler_callback callback");
 
    struct espconn *connection = arg;
-
-   espconn_regist_recvcb(connection, tcp_response_received_handler_callback);
-
-   //printf("Connected callback\n");
-   char *request = get_string_from_rom(REQUEST);
+   struct connection_user_data *user_data = connection->reserve;
+   char *request = user_data->request;
    unsigned short request_length = strnlen(request, 65535);
+   unsigned int keep_alive_value = 30; // seconds
+
+   espconn_set_opt(connection, ESPCONN_REUSEADDR | ESPCONN_KEEPALIVE);
+   espconn_set_keepalive(connection, ESPCONN_KEEPIDLE, &keep_alive_value);
+   keep_alive_value = 5; // seconds
+   // If there is no response, retry ESPCONN_KEEPCNT times every ESPCONN_KEEPINTVL
+   espconn_set_keepalive(connection, ESPCONN_KEEPINTVL, &keep_alive_value);
+   keep_alive_value = 2; // count
+   espconn_set_keepalive(connection, ESPCONN_KEEPCNT, &keep_alive_value);
    espconn_send(connection, request, request_length);
    free(request);
+   user_data->request = NULL;
 }
 
 void successfull_disconnected_tcp_handler_callback() {
@@ -275,12 +271,33 @@ void successfull_disconnected_tcp_handler_callback() {
 
 void tcp_connection_error_handler_callback(void *arg, sint8 err) {
    printf("Connection error callback. Error code: %d\n", err);
+
+   struct espconn *connection = arg;
+   struct connection_user_data *user_data = connection->reserve;
+   char *request = user_data->request;
+
+   if (request != NULL) {
+      free(request);
+      user_data->request = NULL;
+   }
 }
 
 void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned short len) {
    struct espconn *connection = arg;
+   struct connection_user_data *user_data = connection->reserve;
+   unsigned char response_part_counter = user_data->response_part_counter;
 
-   printf("Response length: %d, Response content: %s\n", len, pdata);
+   if (response_part_counter == 0) {
+      char *response_ok_status = get_string_from_rom(RESPONSE_OK_STATUS);
+
+      if (strstr(pdata, response_ok_status)) {
+         user_data->response_part_counter++;
+      }
+      free(response_ok_status);
+   } else if (response_part_counter == 1) {
+      printf("Response length: %d, Response content: %s\n", len, pdata);
+      user_data->response_part_counter++;
+   }
 
    // Don't call this API in any espconn callback. If needed, please use system task to trigger espconn_disconnect.
    //espconn_disconnect(connection);
@@ -295,47 +312,68 @@ void tcp_request_successfully_written_into_buffer_handler_callback() {
 }
 
 void send_request_task(void *pvParameters) {
-   for (;;) {
-      vTaskDelay(7000 / portTICK_RATE_MS);
+   vTaskDelay(6000 / portTICK_RATE_MS);
 
-      struct espconn connection;
+   char *request = pvParameters;
+   struct espconn connection;
+   struct connection_user_data user_data;
 
-      connection.type = ESPCONN_TCP;
-      connection.state = ESPCONN_NONE;
+   user_data.request = request;
+   connection.reserve = &user_data;
 
-      // remote IP of TCP server
-      unsigned char tcp_server_ip[] = {SERVER_IP_ADDRESS_1, SERVER_IP_ADDRESS_2, SERVER_IP_ADDRESS_3, SERVER_IP_ADDRESS_4};
+   connection.type = ESPCONN_TCP;
+   connection.state = ESPCONN_NONE;
 
-      connection.proto.tcp = &user_tcp;
-      memcpy(&connection.proto.tcp->remote_ip, tcp_server_ip, 4);
-      connection.proto.tcp->remote_port = SERVER_PORT;
-      connection.proto.tcp->local_port = espconn_port(); //local port of ESP8266
+   // remote IP of TCP server
+   unsigned char tcp_server_ip[] = {SERVER_IP_ADDRESS_1, SERVER_IP_ADDRESS_2, SERVER_IP_ADDRESS_3, SERVER_IP_ADDRESS_4};
 
-      espconn_regist_connectcb(&connection, successfull_connected_tcp_handler_callback);
-      espconn_regist_disconcb(&connection, successfull_disconnected_tcp_handler_callback);
-      espconn_regist_reconcb(&connection, tcp_connection_error_handler_callback);
-      espconn_regist_sentcb(&connection, tcp_request_successfully_sent_handler_callback);
-      //espconn_regist_write_finish(&connection, tcp_request_successfully_written_into_buffer_handler_callback);
-      int connection_status = espconn_connect(&connection);
+   connection.proto.tcp = &user_tcp;
+   memcpy(&connection.proto.tcp->remote_ip, tcp_server_ip, 4);
+   connection.proto.tcp->remote_port = SERVER_PORT;
+   connection.proto.tcp->local_port = espconn_port(); //local port of ESP8266
 
-      //printf("Connection status: ");
-      switch (connection_status) {
-         case ESPCONN_OK:
-            //printf("Connected\n");
-            break;
-         case ESPCONN_RTE:
-            //printf("Routing problem\n");
-            break;
-         case ESPCONN_MEM:
-            //printf("Out of memory\n");
-            break;
-         case ESPCONN_ISCONN:
-            //printf("Already connected\n");
-            break;
-         case ESPCONN_ARG:
-            //printf("Illegal argument\n");
-            break;
-      }
+   espconn_regist_connectcb(&connection, successfull_connected_tcp_handler_callback);
+   espconn_regist_disconcb(&connection, successfull_disconnected_tcp_handler_callback);
+   espconn_regist_reconcb(&connection, tcp_connection_error_handler_callback);
+   espconn_regist_sentcb(&connection, tcp_request_successfully_sent_handler_callback);
+   espconn_regist_recvcb(&connection, tcp_response_received_handler_callback);
+   //espconn_regist_write_finish(&connection, tcp_request_successfully_written_into_buffer_handler_callback);
+   int connection_status = espconn_connect(&connection);
+
+   //printf("Connection status: ");
+   switch (connection_status) {
+      case ESPCONN_OK:
+         //printf("Connected\n");
+         break;
+      case ESPCONN_RTE:
+         //printf("Routing problem\n");
+         break;
+      case ESPCONN_MEM:
+         //printf("Out of memory\n");
+         break;
+      case ESPCONN_ISCONN:
+         //printf("Already connected\n");
+         break;
+      case ESPCONN_ARG:
+         //printf("Illegal argument\n");
+         break;
+   }
+
+   if (connection_status != ESPCONN_OK) {
+      free(request);
+   }
+
+   vTaskDelete(NULL);
+}
+
+void wifi_event_handler_callback(System_Event_t *event) {
+   switch (event->event_id) {
+      case EVENT_STAMODE_CONNECTED:
+         pin_output_set(AP_CONNECTION_STATUS_LED_PIN);
+         break;
+      case EVENT_STAMODE_DISCONNECTED:
+         pin_output_reset(AP_CONNECTION_STATUS_LED_PIN);
+         break;
    }
 }
 
@@ -410,6 +448,8 @@ void user_init(void) {
 
    xTaskCreate(autoconnect_task, "autoconnect_task", 256, NULL, 1, NULL);
    xTaskCreate(scan_access_point_task, "scan_access_point_task", 256, NULL, 1, NULL);
-   xTaskCreate(send_request_task, "send_request_task", 256, NULL, 1, NULL);
+
+   char *request = get_string_from_rom(REQUEST);
+   xTaskCreate(send_request_task, "send_request_task", 384, request, 1, NULL);
    //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 176, NULL, 1, NULL);
 }
