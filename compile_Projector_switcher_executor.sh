@@ -6,6 +6,8 @@ xtensa_compiler_dir=/opt/xtensa-lx106-elf
 
 cp -f $windows_project_dir/user_main.c $linux_project_dir/user
 cp -f $windows_project_dir/user_main.h $linux_project_dir/user
+cp -f $windows_project_dir/utils.c $linux_project_dir/user
+cp -f $windows_project_dir/utils.h $linux_project_dir/user
 cp -f $windows_project_dir/device_settings.h $linux_project_dir/user
 
 cd $linux_project_dir
