@@ -284,7 +284,7 @@ void successfull_connected_tcp_handler_callback(void *arg) {
    user_data->request = NULL;
 
    if (sent_status != 0) {
-      void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_error;
+      void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_long_polling_error;
       execute_on_error(connection);
    }
 }
@@ -295,7 +295,7 @@ void successfull_disconnected_tcp_handler_callback(void *arg) {
    bool response_received = user_data->response_received;
 
    //printf("Disconnected callback beginning. Response received: %d\n", response_received);
-   void (*execute_on_succeed)(struct espconn *connection) = user_data->execute_on_succeed;
+   void (*execute_on_succeed)(struct espconn *connection) = user_data->execute_on_long_polling_succeed;
    execute_on_succeed(connection);
    printf("Disconnected callback end\n");
 }
@@ -305,7 +305,7 @@ void tcp_connection_error_handler_callback(void *arg, sint8 err) {
 
    struct espconn *connection = arg;
    struct connection_user_data *user_data = connection->reserve;
-   void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_error;
+   void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_long_polling_error;
 
    execute_on_error(connection);
 }
@@ -337,25 +337,17 @@ void tcp_request_successfully_written_into_buffer_handler_callback() {
 }
 
 void long_polling_request_on_error_callback(struct espconn *connection) {
+   printf("long_polling_request_on_error_callback\n");
    struct connection_user_data *user_data = connection->reserve;
    char *request = user_data->request;
 
    pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
    set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
-   if (request != NULL) {
-      free(request);
-      user_data->request = NULL;
-   }
-   if (user_data->timeout_request_supervisor_task != NULL) {
-      vTaskDelete(user_data->timeout_request_supervisor_task);
-   }
-   espconn_delete(connection);
-   printf("long_polling_request_on_error_callback\n");
-   xSemaphoreGive(long_polling_request_semaphore_g);
+   long_polling_request_finish_action(connection);
 }
 
 void long_polling_request_on_succeed_callback(struct espconn *connection) {
-   //printf("long_polling_request_on_succeed_callback beginning\n");
+   printf("long_polling_request_on_succeed_callback\n");
    struct connection_user_data *user_data = connection->reserve;
 
    if (!user_data->response_received) {
@@ -363,9 +355,14 @@ void long_polling_request_on_succeed_callback(struct espconn *connection) {
       return;
    }
 
+   pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
+   long_polling_request_finish_action(connection);
+}
+
+void long_polling_request_finish_action(struct espconn *connection) {
+   struct connection_user_data *user_data = connection->reserve;
    char *request = user_data->request;
 
-   pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
    if (request != NULL) {
       free(request);
       user_data->request = NULL;
@@ -375,7 +372,6 @@ void long_polling_request_on_succeed_callback(struct espconn *connection) {
       //printf("timeout_request_supervisor_task exists\n");
    }
    espconn_delete(connection);
-   printf("long_polling_request_on_succeed_callback end\n");
    xSemaphoreGive(long_polling_request_semaphore_g);
 }
 
@@ -392,12 +388,12 @@ void timeout_request_supervisor_task(void *pvParameters) {
       printf("Some another connection timeout error\n");
       struct connection_user_data *user_data = connection->reserve;
 
+      // To not delete this task in other functions
       user_data->timeout_request_supervisor_task = NULL;
-      void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_error;
+      void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_long_polling_error;
       execute_on_error(connection);
    }
 
-   printf("timeout_request_supervisor_task to be deleted\n");
    vTaskDelete(NULL);
 }
 
@@ -418,8 +414,8 @@ void send_long_polling_request_task(void *pvParameters) {
          user_data.response_received = false;
          user_data.timeout_request_supervisor_task = NULL;
          user_data.request = request;
-         user_data.execute_on_succeed = long_polling_request_on_succeed_callback;
-         user_data.execute_on_error = long_polling_request_on_error_callback;
+         user_data.execute_on_long_polling_succeed = long_polling_request_on_succeed_callback;
+         user_data.execute_on_long_polling_error = long_polling_request_on_error_callback;
          connection.reserve = &user_data;
          connection.type = ESPCONN_TCP;
          connection.state = ESPCONN_NONE;

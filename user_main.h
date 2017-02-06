@@ -22,8 +22,8 @@ char RESPONSE_SERVER_SENT_OK[] ICACHE_RODATA_ATTR = "\"statusCode\":\"OK\"";
 struct connection_user_data {
    bool response_received;
    char *request;
-   void (*execute_on_succeed)(struct espconn *connection);
-   void (*execute_on_error)(struct espconn *connection);
+   void (*execute_on_long_polling_succeed)(struct espconn *connection);
+   void (*execute_on_long_polling_error)(struct espconn *connection);
    xTaskHandle timeout_request_supervisor_task;
 };
 
@@ -38,4 +38,5 @@ void tcp_request_successfully_sent_handler_callback();
 void tcp_request_successfully_written_into_buffer_handler_callback();
 void long_polling_request_on_succeed_callback(struct espconn *connection);
 void long_polling_request_on_error_callback(struct espconn *connection);
+void long_polling_request_finish_action(struct espconn *connection);
 #endif
