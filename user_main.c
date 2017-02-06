@@ -269,35 +269,35 @@ void successfull_connected_tcp_handler_callback(void *arg) {
    char *request = user_data->request;
    unsigned short request_length = strnlen(request, 0xFFFF);
 
-   espconn_set_opt(connection, ESPCONN_KEEPALIVE); // ESPCONN_REUSEADDR |
-   uint32 espconn_keepidle_value = 5; // seconds
-   unsigned char keepalive_error_code = espconn_set_keepalive(connection, ESPCONN_KEEPIDLE, &espconn_keepidle_value);
-   uint32 espconn_keepintvl_value = 2; // seconds
+   // Keep-Alive timeout doesn't work yet
+   //espconn_set_opt(connection, ESPCONN_KEEPALIVE); // ESPCONN_REUSEADDR |
+   //uint32 espconn_keepidle_value = 5; // seconds
+   //unsigned char keepalive_error_code = espconn_set_keepalive(connection, ESPCONN_KEEPIDLE, &espconn_keepidle_value);
+   //uint32 espconn_keepintvl_value = 2; // seconds
    // If there is no response, retry ESPCONN_KEEPCNT times every ESPCONN_KEEPINTVL
-   keepalive_error_code |= espconn_set_keepalive(connection, ESPCONN_KEEPINTVL, &espconn_keepintvl_value);
-   uint32 espconn_keepcnt_value = 2; // count
-   keepalive_error_code |= espconn_set_keepalive(connection, ESPCONN_KEEPCNT, &espconn_keepcnt_value);
+   //keepalive_error_code |= espconn_set_keepalive(connection, ESPCONN_KEEPINTVL, &espconn_keepintvl_value);
+   //uint32 espconn_keepcnt_value = 2; // count
+   //keepalive_error_code |= espconn_set_keepalive(connection, ESPCONN_KEEPCNT, &espconn_keepcnt_value);
 
    int sent_status = espconn_send(connection, request, request_length);
-
-   if (sent_status != 0) {
-      xSemaphoreGive(long_polling_request_semaphore_g);
-      set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
-   }
-
    free(request);
    user_data->request = NULL;
+
+   if (sent_status != 0) {
+      void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_error;
+      execute_on_error(connection);
+   }
 }
 
 void successfull_disconnected_tcp_handler_callback(void *arg) {
    struct espconn *connection = arg;
    struct connection_user_data *user_data = connection->reserve;
-   char *request = user_data->request;
    bool response_received = user_data->response_received;
 
-   xSemaphoreGive(long_polling_request_semaphore_g);
-   free(request);
-   printf("Disconnected callback. Response received: %d\n", response_received);
+   //printf("Disconnected callback beginning. Response received: %d\n", response_received);
+   void (*execute_on_succeed)(struct espconn *connection) = user_data->execute_on_succeed;
+   execute_on_succeed(connection);
+   printf("Disconnected callback end\n");
 }
 
 void tcp_connection_error_handler_callback(void *arg, sint8 err) {
@@ -305,14 +305,9 @@ void tcp_connection_error_handler_callback(void *arg, sint8 err) {
 
    struct espconn *connection = arg;
    struct connection_user_data *user_data = connection->reserve;
-   char *request = user_data->request;
+   void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_error;
 
-   set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
-   xSemaphoreGive(long_polling_request_semaphore_g);
-   if (request != NULL) {
-      free(request);
-      user_data->request = NULL;
-   }
+   execute_on_error(connection);
 }
 
 void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned short len) {
@@ -325,9 +320,9 @@ void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned sho
 
       if (strstr(pdata, server_sent)) {
          user_data->response_received = true;
+         printf("Response length: %d, content: %s\n", len, pdata);
       }
    }
-   printf("Response length: %d, content: %s, already received: %d\n", len, pdata, response_received);
 
    // Don't call this API in any espconn callback. If needed, please use system task to trigger espconn_disconnect.
    //espconn_disconnect(connection);
@@ -339,6 +334,71 @@ void tcp_request_successfully_sent_handler_callback() {
 
 void tcp_request_successfully_written_into_buffer_handler_callback() {
    //printf("Request written into buffer callback\n");
+}
+
+void long_polling_request_on_error_callback(struct espconn *connection) {
+   struct connection_user_data *user_data = connection->reserve;
+   char *request = user_data->request;
+
+   pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
+   set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
+   if (request != NULL) {
+      free(request);
+      user_data->request = NULL;
+   }
+   if (user_data->timeout_request_supervisor_task != NULL) {
+      vTaskDelete(user_data->timeout_request_supervisor_task);
+   }
+   espconn_delete(connection);
+   printf("long_polling_request_on_error_callback\n");
+   xSemaphoreGive(long_polling_request_semaphore_g);
+}
+
+void long_polling_request_on_succeed_callback(struct espconn *connection) {
+   //printf("long_polling_request_on_succeed_callback beginning\n");
+   struct connection_user_data *user_data = connection->reserve;
+
+   if (!user_data->response_received) {
+      long_polling_request_on_error_callback(connection);
+      return;
+   }
+
+   char *request = user_data->request;
+
+   pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
+   if (request != NULL) {
+      free(request);
+      user_data->request = NULL;
+   }
+   if (user_data->timeout_request_supervisor_task != NULL) {
+      vTaskDelete(user_data->timeout_request_supervisor_task);
+      //printf("timeout_request_supervisor_task exists\n");
+   }
+   espconn_delete(connection);
+   printf("long_polling_request_on_succeed_callback end\n");
+   xSemaphoreGive(long_polling_request_semaphore_g);
+}
+
+void timeout_request_supervisor_task(void *pvParameters) {
+   vTaskDelay(LONG_POLLING_REQUEST_DURATION_TIME);
+   //printf("Request timeout\n");
+
+   struct espconn *connection = pvParameters;
+
+   if (connection->state == ESPCONN_CONNECT) {
+      printf("Was connected\n");
+      espconn_disconnect(connection);
+   } else {
+      printf("Some another connection timeout error\n");
+      struct connection_user_data *user_data = connection->reserve;
+
+      user_data->timeout_request_supervisor_task = NULL;
+      void (*execute_on_error)(struct espconn *connection) = user_data->execute_on_error;
+      execute_on_error(connection);
+   }
+
+   printf("timeout_request_supervisor_task to be deleted\n");
+   vTaskDelete(NULL);
 }
 
 void send_long_polling_request_task(void *pvParameters) {
@@ -355,7 +415,11 @@ void send_long_polling_request_task(void *pvParameters) {
          struct espconn connection;
          struct connection_user_data user_data;
 
+         user_data.response_received = false;
+         user_data.timeout_request_supervisor_task = NULL;
          user_data.request = request;
+         user_data.execute_on_succeed = long_polling_request_on_succeed_callback;
+         user_data.execute_on_error = long_polling_request_on_error_callback;
          connection.reserve = &user_data;
          connection.type = ESPCONN_TCP;
          connection.state = ESPCONN_NONE;
@@ -379,6 +443,7 @@ void send_long_polling_request_task(void *pvParameters) {
          //printf("Connection status: ");
          switch (connection_status) {
             case ESPCONN_OK:
+               xTaskCreate(timeout_request_supervisor_task, "timeout_request_supervisor_task", 256, &connection, 1, &user_data.timeout_request_supervisor_task);
                //printf("Connected\n");
                break;
             case ESPCONN_RTE:
@@ -388,7 +453,7 @@ void send_long_polling_request_task(void *pvParameters) {
                //printf("Out of memory\n");
                break;
             case ESPCONN_ISCONN:
-               //printf("Already connected\n");
+               printf("Already connected\n");
                break;
             case ESPCONN_ARG:
                //printf("Illegal argument\n");
@@ -396,9 +461,7 @@ void send_long_polling_request_task(void *pvParameters) {
          }
 
          if (connection_status != ESPCONN_OK) {
-            free(request);
-            xSemaphoreGive(long_polling_request_semaphore_g);
-            set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
+            long_polling_request_on_error_callback(&connection);
          }
       } else if (read_output_pin_state(AP_CONNECTION_STATUS_LED_PIN)) {
          pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
@@ -467,7 +530,6 @@ void set_default_wi_fi_settings() {
    free(current_ip);
    free(own_ip_address);
 }
-
 
 pins_config() {
    GPIO_ConfigTypeDef output_pins;
