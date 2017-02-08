@@ -11,13 +11,17 @@
    #define false 0
 #endif
 
-#define LONG_POLLING_REQUEST_ERROR_OCCURRED 1
+#define LONG_POLLING_REQUEST_ERROR_OCCURRED  1
+#define SERVER_IS_AVAILABLE                  2
 
 #define LONG_POLLING_REQUEST_IDLE_TIME_ON_ERROR (10000 / portTICK_RATE_MS)
 #define LONG_POLLING_REQUEST_DURATION_TIME (1.5 * 60 * 1000 / portTICK_RATE_MS)
 
 char RESPONSE_OK_STATUS[] ICACHE_RODATA_ATTR = "200 OK";
 char RESPONSE_SERVER_SENT_OK[] ICACHE_RODATA_ATTR = "\"statusCode\":\"OK\"";
+char PROJECTOR_DEFERRED_POST_REQUEST[] ICACHE_RODATA_ATTR =
+      "POST /server/esp8266/testDeferred HTTP/1.1\r\nContent-Length: <1>\r\nHost: <2>\r\nUser-Agent: ESP8266\r\nContent-Type: application/json\r\nAccept: application/json\r\n\r\n<3>\r\n";
+char PROJECTOR_DEFERRED_REQUEST_PAYLOAD[] ICACHE_RODATA_ATTR = "{\"gain\":\"<1>\",\"serverIsAvailable\":<2>,\"deviceName\":\"<3>\"}";
 
 struct connection_user_data {
    bool response_received;

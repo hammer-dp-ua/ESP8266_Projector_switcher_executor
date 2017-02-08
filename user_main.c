@@ -26,8 +26,6 @@ unsigned int general_flags;
 
 xSemaphoreHandle long_polling_request_semaphore_g;
 
-char REQUEST[] ICACHE_RODATA_ATTR = "POST /server/esp8266/testDeferred HTTP/1.1\r\nContent-Length: 43\r\nHost: 192.168.0.2\r\nUser-Agent: ESP8266\r\nContent-Type: application/json\r\nAccept: application/json\r\n\r\n{\"gain\":\"-1\",\"deviceName\":\"Some Projector\"}\r\n";
-
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
  * Description  : SDK just reversed 4 sectors, used for rf init data and paramters.
@@ -237,9 +235,9 @@ void scan_access_point_task(void *pvParameters) {
          wifi_station_scan(&ap_scan_config, get_ap_signal_strength);
          free(default_access_point_name);
 
-         vTaskDelay(rescan_when_not_connected_task_delay);
-      } else {
          vTaskDelay(rescan_when_connected_task_delay);
+      } else {
+         vTaskDelay(rescan_when_not_connected_task_delay);
       }
    }
 }
@@ -343,6 +341,7 @@ void long_polling_request_on_error_callback(struct espconn *connection) {
 
    pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
    set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
+   reset_flag(&general_flags, SERVER_IS_AVAILABLE);
    long_polling_request_finish_action(connection);
 }
 
@@ -355,6 +354,7 @@ void long_polling_request_on_succeed_callback(struct espconn *connection) {
       return;
    }
 
+   set_flag(&general_flags, SERVER_IS_AVAILABLE);
    pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
    long_polling_request_finish_action(connection);
 }
@@ -398,6 +398,7 @@ void timeout_request_supervisor_task(void *pvParameters) {
 }
 
 void send_long_polling_request_task(void *pvParameters) {
+   vTaskDelay(5000 / portTICK_RATE_MS);
    for (;;) {
       if (read_output_pin_state(AP_CONNECTION_STATUS_LED_PIN) && xSemaphoreTake(long_polling_request_semaphore_g, portMAX_DELAY) == pdTRUE) {
          if (read_flag(general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED)) {
@@ -406,8 +407,31 @@ void send_long_polling_request_task(void *pvParameters) {
             vTaskDelay(LONG_POLLING_REQUEST_IDLE_TIME_ON_ERROR);
          }
 
-         printf("Start creating request\n");
-         char *request = get_string_from_rom(REQUEST);
+         char signal_strength[4];
+         sprintf(signal_strength, "%d", signal_strength_g);
+         char *server_is_available = read_flag(general_flags, SERVER_IS_AVAILABLE) ? "true" : "false";
+         char *device_name = get_string_from_rom(DEVICE_NAME);
+         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, NULL};
+         char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
+         char *request_payload = set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);
+
+         free(device_name);
+         free(projector_deferred_request_payload_template);
+
+         char *request_template = get_string_from_rom(PROJECTOR_DEFERRED_POST_REQUEST);
+         unsigned short request_payload_length = strnlen(request_payload, 0xFFFF);
+         char request_payload_length_string[3];
+         sprintf(request_payload_length_string, "%d", request_payload_length);
+         char *server_ip_address = get_string_from_rom(SERVER_IP_ADDRESS);
+         char *request_template_parameters[] = {request_payload_length_string, server_ip_address, request_payload, NULL};
+         char *request = set_string_parameters(request_template, request_template_parameters);
+
+         free(request_payload);
+         free(request_template);
+         free(server_ip_address);
+
+         printf("Request created: %s\n", request);
+
          struct espconn connection;
          struct connection_user_data user_data;
 
