@@ -16,6 +16,7 @@
 
 unsigned int milliseconds_g;
 int signal_strength_g;
+unsigned short errors_counter_g;
 LOCAL os_timer_t millisecons_time_serv_g;
 
 struct _esp_tcp user_tcp;
@@ -74,7 +75,6 @@ uint32 user_rf_cal_sector_set(void) {
  */
 void pin_output_set(unsigned int pin) {
    GPIO_REG_WRITE(GPIO_OUT_W1TS_ADDRESS, pin);
-   GPIO_REG_WRITE(GPIO_ENABLE_W1TS_ADDRESS, pin);
 }
 
 /**
@@ -82,7 +82,6 @@ void pin_output_set(unsigned int pin) {
  */
 void pin_output_reset(unsigned int pin) {
    GPIO_REG_WRITE(GPIO_OUT_W1TC_ADDRESS, pin);
-   GPIO_REG_WRITE(GPIO_ENABLE_W1TC_ADDRESS, pin);
 }
 
 /**
@@ -295,11 +294,11 @@ void successfull_disconnected_tcp_handler_callback(void *arg) {
    //printf("Disconnected callback beginning. Response received: %d\n", response_received);
    void (*execute_on_succeed)(struct espconn *connection) = user_data->execute_on_long_polling_succeed;
    execute_on_succeed(connection);
-   printf("Disconnected callback end\n");
+   //printf("Disconnected callback end\n");
 }
 
 void tcp_connection_error_handler_callback(void *arg, sint8 err) {
-   printf("Connection error callback. Error code: %d\n", err);
+   //printf("Connection error callback. Error code: %d\n", err);
 
    struct espconn *connection = arg;
    struct connection_user_data *user_data = connection->reserve;
@@ -318,8 +317,12 @@ void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned sho
 
       if (strstr(pdata, server_sent)) {
          user_data->response_received = true;
-         printf("Response length: %d, content: %s\n", len, pdata);
+         char *response = malloc(len);
+         memcpy(response, pdata, len);
+         user_data->response = response;
+         //printf("Response length: %d, content: %s\n", len, pdata);
       }
+      free(server_sent);
    }
 
    // Don't call this API in any espconn callback. If needed, please use system task to trigger espconn_disconnect.
@@ -335,10 +338,11 @@ void tcp_request_successfully_written_into_buffer_handler_callback() {
 }
 
 void long_polling_request_on_error_callback(struct espconn *connection) {
-   printf("long_polling_request_on_error_callback\n");
+   //printf("long_polling_request_on_error_callback\n");
    struct connection_user_data *user_data = connection->reserve;
    char *request = user_data->request;
 
+   errors_counter_g++;
    pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
    set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
    reset_flag(&general_flags, SERVER_IS_AVAILABLE);
@@ -346,13 +350,23 @@ void long_polling_request_on_error_callback(struct espconn *connection) {
 }
 
 void long_polling_request_on_succeed_callback(struct espconn *connection) {
-   printf("long_polling_request_on_succeed_callback\n");
+   //printf("long_polling_request_on_succeed_callback\n");
    struct connection_user_data *user_data = connection->reserve;
 
    if (!user_data->response_received) {
       long_polling_request_on_error_callback(connection);
       return;
    }
+
+   char *turn_on_true_json_element = get_string_from_rom(TURN_ON_TRUE_JSON_ELEMENT);
+
+   //printf("Response from long_polling_request_on_succeed_callback:\n%s", user_data->response);
+   if (strstr(user_data->response, turn_on_true_json_element)) {
+      pin_output_set(PROJECTOR_RELAY_PIN);
+   } else {
+      pin_output_reset(PROJECTOR_RELAY_PIN);
+   }
+   free(turn_on_true_json_element);
 
    set_flag(&general_flags, SERVER_IS_AVAILABLE);
    pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
@@ -367,6 +381,11 @@ void long_polling_request_finish_action(struct espconn *connection) {
       free(request);
       user_data->request = NULL;
    }
+   if (user_data->response != NULL) {
+      free(user_data->response);
+      user_data->response = NULL;
+   }
+
    if (user_data->timeout_request_supervisor_task != NULL) {
       vTaskDelete(user_data->timeout_request_supervisor_task);
       //printf("timeout_request_supervisor_task exists\n");
@@ -382,10 +401,10 @@ void timeout_request_supervisor_task(void *pvParameters) {
    struct espconn *connection = pvParameters;
 
    if (connection->state == ESPCONN_CONNECT) {
-      printf("Was connected\n");
+      //printf("Was connected\n");
       espconn_disconnect(connection);
    } else {
-      printf("Some another connection timeout error\n");
+      //printf("Some another connection timeout error\n");
       struct connection_user_data *user_data = connection->reserve;
 
       // To not delete this task in other functions
@@ -398,7 +417,7 @@ void timeout_request_supervisor_task(void *pvParameters) {
 }
 
 void send_long_polling_request_task(void *pvParameters) {
-   vTaskDelay(5000 / portTICK_RATE_MS);
+   //vTaskDelay(5000 / portTICK_RATE_MS);
    for (;;) {
       if (read_output_pin_state(AP_CONNECTION_STATUS_LED_PIN) && xSemaphoreTake(long_polling_request_semaphore_g, portMAX_DELAY) == pdTRUE) {
          if (read_flag(general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED)) {
@@ -411,7 +430,9 @@ void send_long_polling_request_task(void *pvParameters) {
          sprintf(signal_strength, "%d", signal_strength_g);
          char *server_is_available = read_flag(general_flags, SERVER_IS_AVAILABLE) ? "true" : "false";
          char *device_name = get_string_from_rom(DEVICE_NAME);
-         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, NULL};
+         char errors_counter[5];
+         sprintf(errors_counter, "%d", errors_counter_g);
+         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, NULL};
          char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
          char *request_payload = set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);
 
@@ -430,7 +451,7 @@ void send_long_polling_request_task(void *pvParameters) {
          free(request_template);
          free(server_ip_address);
 
-         printf("Request created: %s\n", request);
+         //printf("Request created: %s\n", request);
 
          struct espconn connection;
          struct connection_user_data user_data;
@@ -438,6 +459,7 @@ void send_long_polling_request_task(void *pvParameters) {
          user_data.response_received = false;
          user_data.timeout_request_supervisor_task = NULL;
          user_data.request = request;
+         user_data.response = NULL;
          user_data.execute_on_long_polling_succeed = long_polling_request_on_succeed_callback;
          user_data.execute_on_long_polling_error = long_polling_request_on_error_callback;
          connection.reserve = &user_data;
@@ -473,7 +495,7 @@ void send_long_polling_request_task(void *pvParameters) {
                //printf("Out of memory\n");
                break;
             case ESPCONN_ISCONN:
-               printf("Already connected\n");
+               //printf("Already connected\n");
                break;
             case ESPCONN_ARG:
                //printf("Illegal argument\n");
