@@ -7,12 +7,14 @@
 #include "gpio.h"
 #include "esp_sta.h"
 #include "esp_wifi.h"
+#include "upgrade.h"
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
 #include "espconn.h"
 #include "user_main.h"
 #include "utils.h"
 #include "lwip/sys.h"
+#include "lwip/inet.h"
 
 unsigned int milliseconds_g;
 int signal_strength_g;
@@ -344,8 +346,8 @@ void long_polling_request_on_error_callback(struct espconn *connection) {
 
    errors_counter_g++;
    pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
-   set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
-   reset_flag(&general_flags, SERVER_IS_AVAILABLE);
+   set_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED_FLAG);
+   reset_flag(&general_flags, SERVER_IS_AVAILABLE_FLAG);
    long_polling_request_finish_action(connection);
 }
 
@@ -368,7 +370,7 @@ void long_polling_request_on_succeed_callback(struct espconn *connection) {
    }
    free(turn_on_true_json_element);
 
-   set_flag(&general_flags, SERVER_IS_AVAILABLE);
+   set_flag(&general_flags, SERVER_IS_AVAILABLE_FLAG);
    pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
    long_polling_request_finish_action(connection);
 }
@@ -416,23 +418,85 @@ void timeout_request_supervisor_task(void *pvParameters) {
    vTaskDelete(NULL);
 }
 
+void ota_finished_callback(void *arg) {
+   struct upgrade_server_info *update = arg;
+
+   if (update->upgrade_flag == true) {
+      printf("[OTA] success; rebooting!\n");
+      system_upgrade_flag_set(UPGRADE_FLAG_FINISH);
+      system_upgrade_reboot();
+   } else {
+      printf("[OTA] failed!\n");
+   }
+
+   free(&update->sockaddrin);
+   free(update->url);
+   free(update);
+}
+
+void update_firmware_task(void *pvParameters) {
+   struct upgrade_server_info *update = (struct upgrade_server_info *)zalloc(sizeof(struct upgrade_server_info));
+   struct sockaddr_in *sockaddrin = (struct sockaddr_in *)zalloc(sizeof(struct sockaddr_in));
+
+   update->sockaddrin = *sockaddrin;
+   update->sockaddrin.sin_family = AF_INET;
+   struct in_addr sin_addr;
+   char *server_ip = get_string_from_rom(SERVER_IP_ADDRESS);
+   sin_addr.s_addr = inet_addr(server_ip);
+   update->sockaddrin.sin_addr = sin_addr;
+   update->sockaddrin.sin_port = htons(SERVER_PORT);
+   update->sockaddrin.sin_len = sizeof(update->sockaddrin);
+   update->check_cb = ota_finished_callback;
+   update->check_times = 10;
+
+   char *url_pattern = get_string_from_rom(FIRMWARE_UPDATE_GET_REQUEST);
+   unsigned char user_bin = system_upgrade_userbin_check();
+   char *file_to_download = user_bin == UPGRADE_FW_BIN1 ? "user2.bin" : "user1.bin";
+   char *url_parameters[] = {file_to_download, server_ip, NULL};
+   char *url = set_string_parameters(url_pattern, url_parameters);
+
+   free(url_pattern);
+   free(server_ip);
+   update->url = url;
+
+   system_upgrade_init();
+   system_upgrade_flag_set(UPGRADE_FLAG_START);
+   if (system_upgrade_start(update) == false) {
+      printf("[OTA] Could not start upgrade\n");
+
+      free(&update->sockaddrin);
+      free(update->url);
+      free(update);
+   } else {
+      printf("[OTA] Upgrading...\n");
+   }
+}
+
 void send_long_polling_request_task(void *pvParameters) {
    //vTaskDelay(5000 / portTICK_RATE_MS);
    for (;;) {
       if (read_output_pin_state(AP_CONNECTION_STATUS_LED_PIN) && xSemaphoreTake(long_polling_request_semaphore_g, portMAX_DELAY) == pdTRUE) {
-         if (read_flag(general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED)) {
-            reset_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED);
+         if (read_flag(general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED_FLAG)) {
+            reset_flag(&general_flags, LONG_POLLING_REQUEST_ERROR_OCCURRED_FLAG);
 
             vTaskDelay(LONG_POLLING_REQUEST_IDLE_TIME_ON_ERROR);
          }
 
+         if (read_flag(general_flags, UPDATE_FIRMWARE_FLAG)) {
+            reset_flag(&general_flags, UPDATE_FIRMWARE_FLAG);
+            xTaskCreate(update_firmware_task, "update_firmware_task", 256, NULL, 1, NULL);
+            continue;
+         }
+
          char signal_strength[4];
          sprintf(signal_strength, "%d", signal_strength_g);
-         char *server_is_available = read_flag(general_flags, SERVER_IS_AVAILABLE) ? "true" : "false";
+         char *server_is_available = read_flag(general_flags, SERVER_IS_AVAILABLE_FLAG) ? "true" : "false";
          char *device_name = get_string_from_rom(DEVICE_NAME);
          char errors_counter[5];
          sprintf(errors_counter, "%d", errors_counter_g);
-         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, NULL};
+         char build_timestamp[30];
+         sprintf(build_timestamp, "%s", __TIMESTAMP__);
+         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, build_timestamp, NULL};
          char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
          char *request_payload = set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);
 
@@ -472,7 +536,7 @@ void send_long_polling_request_task(void *pvParameters) {
          connection.proto.tcp = &user_tcp;
          memcpy(&connection.proto.tcp->remote_ip, tcp_server_ip, 4);
          connection.proto.tcp->remote_port = SERVER_PORT;
-         connection.proto.tcp->local_port = espconn_port(); //local port of ESP8266
+         connection.proto.tcp->local_port = espconn_port(); // local port of ESP8266
 
          espconn_regist_connectcb(&connection, successfull_connected_tcp_handler_callback);
          espconn_regist_disconcb(&connection, successfull_disconnected_tcp_handler_callback);
