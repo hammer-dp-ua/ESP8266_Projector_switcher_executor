@@ -434,20 +434,20 @@ void ota_finished_callback(void *arg) {
    free(update);
 }
 
-void update_firmware_task(void *pvParameters) {
-   struct upgrade_server_info *update = (struct upgrade_server_info *)zalloc(sizeof(struct upgrade_server_info));
+void upgrade_firmware() {
+   struct upgrade_server_info *upgrade_server = (struct upgrade_server_info *)zalloc(sizeof(struct upgrade_server_info));
    struct sockaddr_in *sockaddrin = (struct sockaddr_in *)zalloc(sizeof(struct sockaddr_in));
 
-   update->sockaddrin = *sockaddrin;
-   update->sockaddrin.sin_family = AF_INET;
+   upgrade_server->sockaddrin = *sockaddrin;
+   upgrade_server->sockaddrin.sin_family = AF_INET;
    struct in_addr sin_addr;
    char *server_ip = get_string_from_rom(SERVER_IP_ADDRESS);
    sin_addr.s_addr = inet_addr(server_ip);
-   update->sockaddrin.sin_addr = sin_addr;
-   update->sockaddrin.sin_port = htons(SERVER_PORT);
-   update->sockaddrin.sin_len = sizeof(update->sockaddrin);
-   update->check_cb = ota_finished_callback;
-   update->check_times = 10;
+   upgrade_server->sockaddrin.sin_addr = sin_addr;
+   upgrade_server->sockaddrin.sin_port = htons(SERVER_PORT);
+   upgrade_server->sockaddrin.sin_len = sizeof(upgrade_server->sockaddrin);
+   upgrade_server->check_cb = ota_finished_callback;
+   upgrade_server->check_times = 10;
 
    char *url_pattern = get_string_from_rom(FIRMWARE_UPDATE_GET_REQUEST);
    unsigned char user_bin = system_upgrade_userbin_check();
@@ -457,19 +457,8 @@ void update_firmware_task(void *pvParameters) {
 
    free(url_pattern);
    free(server_ip);
-   update->url = url;
-
-   system_upgrade_init();
-   system_upgrade_flag_set(UPGRADE_FLAG_START);
-   if (system_upgrade_start(update) == false) {
-      printf("[OTA] Could not start upgrade\n");
-
-      free(&update->sockaddrin);
-      free(update->url);
-      free(update);
-   } else {
-      printf("[OTA] Upgrading...\n");
-   }
+   upgrade_server->url = url;
+   system_upgrade_start(upgrade_server);
 }
 
 void send_long_polling_request_task(void *pvParameters) {
@@ -484,7 +473,7 @@ void send_long_polling_request_task(void *pvParameters) {
 
          if (read_flag(general_flags, UPDATE_FIRMWARE_FLAG)) {
             reset_flag(&general_flags, UPDATE_FIRMWARE_FLAG);
-            xTaskCreate(update_firmware_task, "update_firmware_task", 256, NULL, 1, NULL);
+            upgrade_firmware();
             continue;
          }
 
