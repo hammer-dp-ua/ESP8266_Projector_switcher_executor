@@ -9,7 +9,7 @@
  * 2015/7/3, v1.0 create this file.
 *******************************************************************************/
 //#include "version.h"
-#include "user_config.h"
+//#include "user_config.h"
 
 #include "esp_common.h"
 #include "lwip/mem.h"
