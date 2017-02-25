@@ -72,8 +72,9 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
       secnm = ((upgrade->fw_bin_addr + len) >> 12) + (len & 0xfff ? 1 : 0);
       while (upgrade->fw_bin_sec_earse != secnm) {
          taskENTER_CRITICAL();
+
          if (OUT_OF_RANGE(upgrade->fw_bin_sec_earse)) {
-            os_printf("fw_bin_sec_earse: %d, out of range\n", upgrade->fw_bin_sec_earse);
+            printf("fw_bin_sec_earse: %d, out of range\n", upgrade->fw_bin_sec_earse);
             break;
          } else {
             spi_flash_erase_sector(upgrade->fw_bin_sec_earse);
@@ -82,7 +83,7 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
          taskEXIT_CRITICAL();
          vTaskDelay(10 / portTICK_RATE_MS);
       }
-      os_printf("flash erase over\n");
+      printf("flash erase over\n");
       return true;
    }
 
@@ -98,11 +99,9 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
    if (upgrade->extra <= 4)
       memcpy(upgrade->save, upgrade->buffer + len, upgrade->extra);
    else
-      os_printf("ERR3:arr_overflow,%u,%d\n", __LINE__, upgrade->extra);
-
+      printf("ERR3:arr_overflow,%u,%d\n", __LINE__, upgrade->extra);
    do {
-      if (upgrade->fw_bin_addr
-            + len>= (upgrade->fw_bin_sec + upgrade->fw_bin_sec_num) * SPI_FLASH_SEC_SIZE) {
+      if (upgrade->fw_bin_addr + len>= (upgrade->fw_bin_sec + upgrade->fw_bin_sec_num) * SPI_FLASH_SEC_SIZE) {
          break;
       }
 

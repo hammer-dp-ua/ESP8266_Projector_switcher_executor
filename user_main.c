@@ -103,9 +103,9 @@ bool read_input_pin_state(unsigned int pin) {
 LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_length, char *result, const char *rom_string) {
    unsigned char calculate_string_length = *string_length ? 0 : 1;
    unsigned short calculated_string_length = 0;
-   unsigned int *rom_string_aligned = (unsigned int*) ((unsigned int)rom_string & ~3); // Could be saved in not 4 bytes aligned address
+   unsigned int *rom_string_aligned = (unsigned int*) (((unsigned int) (rom_string)) & ~3); // Could be saved in not 4 bytes aligned address
    unsigned int rom_string_aligned_value = *rom_string_aligned;
-   unsigned char shifted_bytes = (unsigned char) ((unsigned int)rom_string - (unsigned int)rom_string_aligned); // 0 - 3
+   unsigned char shifted_bytes = (unsigned char) ((unsigned int) (rom_string) - (unsigned int) (rom_string_aligned)); // 0 - 3
 
    unsigned char shifted_bytes_tmp = shifted_bytes;
    while (shifted_bytes_tmp < 4) {
@@ -214,7 +214,7 @@ char *get_string_from_rom(const char *rom_string) {
 // Callback function when AP scanning is completed
 void get_ap_signal_strength(void *arg, STATUS status) {
    if (status == OK) {
-      struct bss_info *got_bss_info = (struct bss_info *)arg;
+      struct bss_info *got_bss_info = (struct bss_info *) arg;
 
       signal_strength_g = got_bss_info->rssi;
       //got_bss_info = got_bss_info->next.stqe_next;
@@ -370,6 +370,12 @@ void long_polling_request_on_succeed_callback(struct espconn *connection) {
    }
    free(turn_on_true_json_element);
 
+   char *update_firmware_json_element = get_string_from_rom(UPDATE_FIRMWARE);
+   if (strstr(user_data->response, update_firmware_json_element)) {
+      set_flag(&general_flags, UPDATE_FIRMWARE_FLAG);
+   }
+   free(update_firmware_json_element);
+
    set_flag(&general_flags, SERVER_IS_AVAILABLE_FLAG);
    pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
    long_polling_request_finish_action(connection);
@@ -435,8 +441,8 @@ void ota_finished_callback(void *arg) {
 }
 
 void upgrade_firmware() {
-   struct upgrade_server_info *upgrade_server = (struct upgrade_server_info *)zalloc(sizeof(struct upgrade_server_info));
-   struct sockaddr_in *sockaddrin = (struct sockaddr_in *)zalloc(sizeof(struct sockaddr_in));
+   struct upgrade_server_info *upgrade_server = (struct upgrade_server_info *) zalloc(sizeof(struct upgrade_server_info));
+   struct sockaddr_in *sockaddrin = (struct sockaddr_in *) zalloc(sizeof(struct sockaddr_in));
 
    upgrade_server->sockaddrin = *sockaddrin;
    upgrade_server->sockaddrin.sin_family = AF_INET;
