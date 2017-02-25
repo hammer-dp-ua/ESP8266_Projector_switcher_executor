@@ -75,7 +75,7 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, unsigned int *
    uint32 sec_last = sumlength % CRC_BLOCK_SIZE;
 
    for (i = 0; i < sec_block; i++) {
-      if (0 != (error = spi_flash_read(tart_sec * SPI_FLASH_SEC_SIZE + i * CRC_BLOCK_SIZE, (uint32 *) buf, BUFSIZE))) {
+      if (0 != (error = spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + i * CRC_BLOCK_SIZE, (uint32 *) buf, BUFSIZE))) {
          free(crc_table);
          free(buf);
          os_printf("spi_flash_read error %d\n", error);

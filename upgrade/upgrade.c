@@ -74,10 +74,10 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
    char lengthbuffer[32];
 
    if (totallength == 0
-         && (ptr = (char *)strstr(pusrdata, "\r\n\r\n")) != NULL
-         && (ptr = (char *)strstr(pusrdata, "Content-Length")) != NULL) {
+         && (ptr = (char *) strstr(pusrdata, "\r\n\r\n")) != NULL
+         && (ptr = (char *) strstr(pusrdata, "Content-Length")) != NULL) {
 
-      os_printf("\n pusrdata %s\n", pusrdata);
+      os_printf("\n pusrdata: %s\n", pusrdata);
 
       ptr = (char *) strstr(pusrdata, "Content-Length: ");
       if (ptr != NULL) {
@@ -90,7 +90,7 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
             if ((ptmp2 - ptr) <= 32) {
                memcpy(lengthbuffer, ptr, ptmp2 - ptr);
             } else {
-               os_printf("ERR1:arr_overflow, %u, %d\n", __LINE__, (ptmp2 - ptr));
+               os_printf("ERR1: arr_overflow, %u, %d\n", __LINE__, (ptmp2 - ptr));
             }
 
             sumlength = atoi(lengthbuffer);
@@ -111,7 +111,7 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
                system_upgrade(ptr + 4, length);
             }
          } else {
-            os_printf("ERROR:Get sumlength failed\n");
+            os_printf("ERROR: get sumlength failed\n");
             return false;
          }
       } else {
