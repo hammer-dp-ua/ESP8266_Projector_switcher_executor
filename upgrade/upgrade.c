@@ -20,7 +20,7 @@
 
 /*the size cannot be bigger than below*/
 #define UPGRADE_DATA_SEG_LEN 1460
-#define UPGRADE_RETRY_TIMES 30
+#define UPGRADE_RETRY_TIMES 10
 
 LOCAL os_timer_t upgrade_10s;
 LOCAL uint32 totallength = 0;
@@ -98,11 +98,14 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
 
             ptr = (char *) strstr(pusrdata, "\r\n\r\n"); // End of request
             length -= ptr - pusrdata;
-            length -= 4;
-            totallength = length;
+            length -= 4; // \r\n\r\n
+            totallength = length; // Received bytes headers excluded
 
-            /* at the begining of the upgrade, we get the sumlength and erase all the target flash sectors, return false
+            /*
+             * At the beginning of the upgrade, we get the sumlength and erase all the target flash sectors, return false
              * to close the connection and start upgrade again.
+             *
+             * There is file content after "ptr + 4"
              */
             if (FALSE == flash_erased) {
                flash_erased = system_upgrade(ptr + 4, sumlength);
@@ -129,7 +132,6 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
 
          printf(">>>recv %dB, %dB left\n", totallength, sumlength - totallength);
          system_upgrade(pusrdata, length);
-
       } else {
          printf("server response with something else, check it!\n");
          return false;
@@ -154,17 +156,16 @@ void upgrade_task(void *pvParameters) {
    int sta_socket;
    int retry_count = 0;
    struct ip_info ipconfig;
-
    struct upgrade_server_info *server = pvParameters;
 
    flash_erased = FALSE;
    precv_buf = (char*) malloc(UPGRADE_DATA_SEG_LEN);
+
    if (NULL == precv_buf) {
       printf("upgrade_task, memory exhausted, check it\n");
    }
 
    while (retry_count++ < UPGRADE_RETRY_TIMES) {
-
       wifi_get_ip_info(STATION_IF, &ipconfig);
 
       /* check the ip address or net connection state*/
@@ -177,7 +178,7 @@ void upgrade_task(void *pvParameters) {
       if (-1 == sta_socket) {
          close(sta_socket);
          vTaskDelay(1000 / portTICK_RATE_MS);
-         printf("socket fail !\n");
+         printf("socket fail!\n");
          continue;
       }
 
@@ -194,10 +195,10 @@ void upgrade_task(void *pvParameters) {
       system_upgrade_init();
       system_upgrade_flag_set(UPGRADE_FLAG_START);
 
-      if (write(sta_socket,server->url,strlen(server->url)+1) < 0) {
+      if (write(sta_socket, server->url, strlen(server->url) + 1 ) < 0) {
          close(sta_socket);
          vTaskDelay(1000 / portTICK_RATE_MS);
-         printf("send fail\n");
+         printf("send fail!\n");
          continue;
       }
       printf("Request send success\n");
@@ -205,7 +206,7 @@ void upgrade_task(void *pvParameters) {
       while ((recbytes = read(sta_socket, precv_buf, UPGRADE_DATA_SEG_LEN)) > 0) {
          if (FALSE == flash_erased) {
             close(sta_socket);
-            printf("pre erase flash! Bytes received: %d\n", recbytes);
+            printf("pre erase flash!\n");
             upgrade_data_load(precv_buf, recbytes);
             break;
          }
@@ -217,8 +218,11 @@ void upgrade_task(void *pvParameters) {
             vTaskDelay(1000 / portTICK_RATE_MS);
             break;
          }
-         /*this two length data should be equal, if totallength is bigger,
-          *maybe data wrong or server send extra info, drop it anyway*/
+
+         /*
+          * This two length data should be equal, if totallength is bigger,
+          * maybe data wrong or server send extra info, drop it anyway
+          */
          if (totallength >= sumlength) {
             printf("upgrade data load finish\n");
             close(sta_socket);
@@ -239,8 +243,7 @@ void upgrade_task(void *pvParameters) {
       sumlength = 0;
    }
 
-   finish:
-
+finish:
    os_timer_disarm(&upgrade_timer);
 
    if (upgrade_crc_check(system_get_fw_start_sec(), sumlength) != 0) {

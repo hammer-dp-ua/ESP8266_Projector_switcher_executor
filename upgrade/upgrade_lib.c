@@ -43,6 +43,7 @@ LOCAL bool OUT_OF_RANGE(uint16 erase_sec) {
       start_sec = (system_upgrade_userbin_check() == USER_BIN2) ? 1 : 65;
       sec_num = 59;
    }
+
    if ((erase_sec >= start_sec) && (erase_sec <= (start_sec + sec_num))) {
       return false;
    } else {
@@ -65,7 +66,7 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
       return true;
    }
 
-   /*got the sumlngth,erase all upgrade sector*/
+   // Got the sumlngth, erase all upgrade sector
    if (len > SPI_FLASH_SEC_SIZE) {
       upgrade->fw_bin_sec_earse = upgrade->fw_bin_sec;
 
@@ -99,14 +100,14 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
    if (upgrade->extra <= 4)
       memcpy(upgrade->save, upgrade->buffer + len, upgrade->extra);
    else
-      printf("ERR3:arr_overflow,%u,%d\n", __LINE__, upgrade->extra);
+      printf("ERR3: arr_overflow, %u, %d\n", __LINE__, upgrade->extra);
+
    do {
-      if (upgrade->fw_bin_addr + len>= (upgrade->fw_bin_sec + upgrade->fw_bin_sec_num) * SPI_FLASH_SEC_SIZE) {
+      if (upgrade->fw_bin_addr + len >= (upgrade->fw_bin_sec + upgrade->fw_bin_sec_num) * SPI_FLASH_SEC_SIZE) {
          break;
       }
 
-      if (spi_flash_write(upgrade->fw_bin_addr, (uint32 *) upgrade->buffer, len)
-            != SPI_FLASH_RESULT_OK) {
+      if (spi_flash_write(upgrade->fw_bin_addr, (uint32 *) upgrade->buffer, len) != SPI_FLASH_RESULT_OK) {
          break;
       }
 
@@ -152,7 +153,6 @@ bool system_upgrade(uint8 *data, uint32 len) {
     }
     */
    ret = system_upgrade_internal(upgrade, data, len);
-
    return ret;
 }
 
