@@ -184,7 +184,7 @@ void upgrade_task(void *pvParameters) {
 
       /*for upgrade connection debug*/
       //server->sockaddrin.sin_addr.s_addr= inet_addr("192.168.1.170");
-      if (0 != connect(sta_socket, (struct sockaddr * )(&server->sockaddrin), sizeof(struct sockaddr))) {
+      if (0 != connect(sta_socket, (struct sockaddr * ) (&server->sockaddrin), sizeof(struct sockaddr))) {
          close(sta_socket);
          vTaskDelay(1000 / portTICK_RATE_MS);
          printf("connect fail!\n");

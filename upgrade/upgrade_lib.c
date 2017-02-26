@@ -13,8 +13,8 @@
 #include "upgrade.h"
 
 struct upgrade_param {
-   uint32 fw_bin_addr;
-   uint16 fw_bin_sec;
+   uint32 fw_bin_addr; // .bin start address
+   uint16 fw_bin_sec; // .bin start flash sector multiplier
    uint16 fw_bin_sec_num;
    uint16 fw_bin_sec_earse;
    uint8 extra;
@@ -186,6 +186,7 @@ void system_upgrade_init(void) {
    }
 
    upgrade->fw_bin_sec = (system_upgrade_userbin_check() == USER_BIN1) ? user_bin2_start : user_bin1_start;
+   printf("%d flash sector multiplier will be used\n", upgrade->fw_bin_sec);
    upgrade->fw_bin_addr = upgrade->fw_bin_sec * SPI_FLASH_SEC_SIZE;
    upgrade->fw_bin_sec_earse = upgrade->fw_bin_sec;
 }
