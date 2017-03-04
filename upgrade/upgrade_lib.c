@@ -11,12 +11,13 @@
 #include "esp_common.h"
 #include "lwip/mem.h"
 #include "upgrade.h"
+#include "global_printf_usage.h"
 
 struct upgrade_param {
    uint32 fw_bin_addr; // .bin start address
    uint16 fw_bin_sec; // .bin start flash sector multiplier
    uint16 fw_bin_sec_num;
-   uint16 fw_bin_sec_earse;
+   uint16 fw_bin_sec_earse; // To be erased flash sector. Initializes with a value of fw_bin_sec
    uint8 extra;
    uint8 save[4];
    uint8 *buffer;
@@ -66,25 +67,41 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
       return true;
    }
 
-   // Got the sumlngth, erase all upgrade sector
+   // Got the sumlength, erase all upgrade sector
    if (len > SPI_FLASH_SEC_SIZE) {
       upgrade->fw_bin_sec_earse = upgrade->fw_bin_sec;
 
       secnm = ((upgrade->fw_bin_addr + len) >> 12) + (len & 0xfff ? 1 : 0);
+
+#ifdef ALLOW_USE_PRINTF
+      printf("Last sector number: %d\n", secnm);
+#endif
+
       while (upgrade->fw_bin_sec_earse != secnm) {
          taskENTER_CRITICAL();
 
          if (OUT_OF_RANGE(upgrade->fw_bin_sec_earse)) {
+#ifdef ALLOW_USE_PRINTF
             printf("fw_bin_sec_earse: %d, out of range\n", upgrade->fw_bin_sec_earse);
+#endif
+
             break;
          } else {
+#ifdef ALLOW_USE_PRINTF
+            printf("%d sector is being erased\n", upgrade->fw_bin_sec_earse);
+#endif
+
             spi_flash_erase_sector(upgrade->fw_bin_sec_earse);
             upgrade->fw_bin_sec_earse++;
          }
          taskEXIT_CRITICAL();
          vTaskDelay(10 / portTICK_RATE_MS);
       }
+
+#ifdef ALLOW_USE_PRINTF
       printf("flash erase over\n");
+#endif
+
       return true;
    }
 
@@ -97,10 +114,13 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
    upgrade->extra = len & 0x03;
    len -= upgrade->extra;
 
-   if (upgrade->extra <= 4)
+   if (upgrade->extra <= 4) {
       memcpy(upgrade->save, upgrade->buffer + len, upgrade->extra);
-   else
+   } else {
+#ifdef ALLOW_USE_PRINTF
       printf("ERR3: arr_overflow, %u, %d\n", __LINE__, upgrade->extra);
+#endif
+   }
 
    do {
       if (upgrade->fw_bin_addr + len >= (upgrade->fw_bin_sec + upgrade->fw_bin_sec_num) * SPI_FLASH_SEC_SIZE) {
@@ -186,7 +206,11 @@ void system_upgrade_init(void) {
    }
 
    upgrade->fw_bin_sec = (system_upgrade_userbin_check() == USER_BIN1) ? user_bin2_start : user_bin1_start;
+
+#ifdef ALLOW_USE_PRINTF
    printf("%d flash sector multiplier will be used\n", upgrade->fw_bin_sec);
+#endif
+
    upgrade->fw_bin_addr = upgrade->fw_bin_sec * SPI_FLASH_SEC_SIZE;
    upgrade->fw_bin_sec_earse = upgrade->fw_bin_sec;
 }

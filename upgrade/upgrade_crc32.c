@@ -11,6 +11,7 @@
 #include "lwip/ip_addr.h"
 #include "lwip/mem.h"
 #include <stdlib.h>
+#include "global_printf_usage.h"
 
 #define BUFSIZE     512
 #define CRC_BLOCK_SIZE 512
@@ -21,27 +22,31 @@ static unsigned int *crc_table;
 static const char mem_debug_file[] ICACHE_RODATA_ATTR = __FILE__;
 #endif
 
-static int init_crc_table(void);
+int init_crc_table(void);
 static unsigned int crc32(unsigned int crc, unsigned char * buffer, unsigned int size);
 
-static int ICACHE_FLASH_ATTR init_crc_table(void) {
+int ICACHE_FLASH_ATTR init_crc_table(void) {
    unsigned int c;
    unsigned int i, j;
 
    crc_table = (unsigned int*) zalloc(256 * 4);
    if (crc_table == NULL) {
+#ifdef ALLOW_USE_PRINTF
       printf("malloc crc table failed\n");
+#endif
+
       return -1;
    }
 
    for (i = 0; i < 256; i++) {
-      c = (unsigned int) i;
+      c = i;
 
       for (j = 0; j < 8; j++) {
-         if (c & 1)
-            c = 0xedb88320L ^ (c >> 1);
-         else
+         if (c & 1) {
+            c = 0xedb88320 ^ (c >> 1);
+         } else {
             c = c >> 1;
+         }
       }
       crc_table[i] = c;
    }
@@ -62,10 +67,13 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, unsigned int *
    int ret;
    int i = 0;
    uint8 error = 0;
-   unsigned char *buf = (char *) zalloc(BUFSIZE);
+   unsigned char *buf = (char *) zalloc(CRC_BLOCK_SIZE);
 
    if (buf == NULL) {
+#ifdef ALLOW_USE_PRINTF
       printf("malloc crc buf failed\n");
+#endif
+
       free(crc_table);
       return -1;
    }
@@ -75,22 +83,32 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, unsigned int *
    uint32 sec_last = sumlength % CRC_BLOCK_SIZE;
 
    for (i = 0; i < sec_block; i++) {
-      if (0 != (error = spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + i * CRC_BLOCK_SIZE, (uint32 *) buf, BUFSIZE))) {
+      if (0 != (error = spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + i * CRC_BLOCK_SIZE, (uint32 *) buf, CRC_BLOCK_SIZE))) {
          free(crc_table);
          free(buf);
+
+#ifdef ALLOW_USE_PRINTF
          printf("spi_flash_read error %d\n", error);
+#endif
+
          return -1;
       }
-      crc = crc32(crc, buf, BUFSIZE);
+      crc = crc32(crc, buf, CRC_BLOCK_SIZE);
    }
-   printf("%d crc blocks read; total bytes read from flash: %d\n", i, i * CRC_BLOCK_SIZE);
 
-   if (sec_last > 0) {
-      printf("One more crc block is reading...\n");
+   if (sec_last) {
+#ifdef ALLOW_USE_PRINTF
+      printf("One more sector\n");
+#endif
+
       if (0 != (error = spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + i * CRC_BLOCK_SIZE, (uint32 *) buf, sec_last))) {
          free(crc_table);
          free(buf);
+
+#ifdef ALLOW_USE_PRINTF
          printf("spi_flash_read error %d\n", error);
+#endif
+
          return -1;
       }
       crc = crc32(crc, buf, sec_last);
@@ -118,9 +136,15 @@ int ICACHE_FLASH_ATTR upgrade_crc_check(uint16 fw_bin_sec, unsigned int sumlengt
       return false;
    }
 
-   printf("img_crc = %u\n", img_crc);
+#ifdef ALLOW_USE_PRINTF
+   printf("img_crc = %u = 0x%x \n", img_crc, img_crc);
+#endif
+
    spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + sumlength - 4, &flash_crc, 4);
-   printf("flash_crc = %u\n", flash_crc);
+
+#ifdef ALLOW_USE_PRINTF
+   printf("flash_crc = %u = 0x%x\n", flash_crc, flash_crc);
+#endif
 
    if (img_crc == flash_crc) {
       return 0;

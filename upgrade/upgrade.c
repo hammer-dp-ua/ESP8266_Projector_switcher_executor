@@ -18,11 +18,12 @@
 #include "freertos/task.h"
 #include "upgrade.h"
 
+#define ALLOW_USE_PRINTF
+
 /*the size cannot be bigger than below*/
 #define UPGRADE_DATA_SEG_LEN 1460
 #define UPGRADE_RETRY_TIMES 10
 
-LOCAL os_timer_t upgrade_10s;
 LOCAL uint32 totallength = 0;
 LOCAL uint32 sumlength = 0;
 LOCAL BOOL flash_erased = 0;
@@ -77,7 +78,9 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
          && (ptr = (char *) strstr(pusrdata, "\r\n\r\n")) != NULL
          && (ptr = (char *) strstr(pusrdata, "Content-Length")) != NULL) {
 
+#ifdef ALLOW_USE_PRINTF
       printf("\n pusrdata: %s\n", pusrdata);
+#endif
 
       ptr = (char *) strstr(pusrdata, "Content-Length: ");
       if (ptr != NULL) {
@@ -90,11 +93,16 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
             if ((ptmp2 - ptr) <= 32) {
                memcpy(lengthbuffer, ptr, ptmp2 - ptr);
             } else {
+#ifdef ALLOW_USE_PRINTF
                printf("ERR1: arr_overflow, %u, %d\n", __LINE__, ptmp2 - ptr);
+#endif
             }
 
             sumlength = atoi(lengthbuffer); // Value of Content-Length header
+
+#ifdef ALLOW_USE_PRINTF
             printf("userbin sumlength: %d\n", sumlength);
+#endif
 
             ptr = (char *) strstr(pusrdata, "\r\n\r\n"); // End of request
             length -= ptr - pusrdata;
@@ -114,11 +122,17 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
                system_upgrade(ptr + 4, length);
             }
          } else {
+#ifdef ALLOW_USE_PRINTF
             printf("ERROR: get sumlength failed\n");
+#endif
+
             return false;
          }
       } else {
+#ifdef ALLOW_USE_PRINTF
          printf("ERROR: get Content-Length failed\n");
+#endif
+
          return false;
       }
    } else {
@@ -126,14 +140,20 @@ BOOL upgrade_data_load(char *pusrdata, unsigned short length) {
          totallength += length;
 
          if (totallength > sumlength) {
+#ifdef ALLOW_USE_PRINTF
             printf("strip the 400 error mesg\n");
+#endif
+
             length = length - (totallength - sumlength);
          }
 
-         printf(">>>recv %dB, %dB left\n", totallength, sumlength - totallength);
+         //printf(">>>recv %dB, %dB left\n", totallength, sumlength - totallength);
          system_upgrade(pusrdata, length);
       } else {
+#ifdef ALLOW_USE_PRINTF
          printf("server response with something else, check it!\n");
+#endif
+
          return false;
       }
    }
@@ -161,9 +181,11 @@ void upgrade_task(void *pvParameters) {
    flash_erased = FALSE;
    precv_buf = (char*) malloc(UPGRADE_DATA_SEG_LEN);
 
+#ifdef ALLOW_USE_PRINTF
    if (NULL == precv_buf) {
       printf("upgrade_task, memory exhausted, check it\n");
    }
+#endif
 
    while (retry_count++ < UPGRADE_RETRY_TIMES) {
       wifi_get_ip_info(STATION_IF, &ipconfig);
@@ -178,7 +200,11 @@ void upgrade_task(void *pvParameters) {
       if (-1 == sta_socket) {
          close(sta_socket);
          vTaskDelay(1000 / portTICK_RATE_MS);
+
+#ifdef ALLOW_USE_PRINTF
          printf("socket fail!\n");
+#endif
+
          continue;
       }
 
@@ -187,10 +213,17 @@ void upgrade_task(void *pvParameters) {
       if (0 != connect(sta_socket, (struct sockaddr * ) (&server->sockaddrin), sizeof(struct sockaddr))) {
          close(sta_socket);
          vTaskDelay(1000 / portTICK_RATE_MS);
+
+#ifdef ALLOW_USE_PRINTF
          printf("connect fail!\n");
+#endif
+
          continue;
       }
+
+#ifdef ALLOW_USE_PRINTF
       printf("Connect OK!\n");
+#endif
 
       system_upgrade_init();
       system_upgrade_flag_set(UPGRADE_FLAG_START);
@@ -198,21 +231,34 @@ void upgrade_task(void *pvParameters) {
       if (write(sta_socket, server->url, strlen(server->url) + 1 ) < 0) {
          close(sta_socket);
          vTaskDelay(1000 / portTICK_RATE_MS);
+
+#ifdef ALLOW_USE_PRINTF
          printf("send fail!\n");
+#endif
          continue;
       }
+
+#ifdef ALLOW_USE_PRINTF
       printf("Request send success\n");
+#endif
 
       while ((recbytes = read(sta_socket, precv_buf, UPGRADE_DATA_SEG_LEN)) > 0) {
          if (FALSE == flash_erased) {
             close(sta_socket);
+
+#ifdef ALLOW_USE_PRINTF
             printf("pre erase flash!\n");
+#endif
+
             upgrade_data_load(precv_buf, recbytes);
             break;
          }
 
          if (false == upgrade_data_load(precv_buf, recbytes)) {
+#ifdef ALLOW_USE_PRINTF
             printf("upgrade data error!\n");
+#endif
+
             close(sta_socket);
             flash_erased = FALSE;
             vTaskDelay(1000 / portTICK_RATE_MS);
@@ -224,19 +270,27 @@ void upgrade_task(void *pvParameters) {
           * maybe data wrong or server send extra info, drop it anyway
           */
          if (totallength >= sumlength) {
+#ifdef ALLOW_USE_PRINTF
             printf("upgrade data load finish\n");
+#endif
+
             close(sta_socket);
             goto finish;
          }
 
-         printf("upgrade_task %d word left\n", uxTaskGetStackHighWaterMark(NULL));
+#ifdef ALLOW_USE_PRINTF
+         //printf("upgrade_task %d word left\n", uxTaskGetStackHighWaterMark(NULL));
+#endif
       }
 
       if (recbytes <= 0) {
          close(sta_socket);
          flash_erased = FALSE;
          vTaskDelay(1000 / portTICK_RATE_MS);
+
+#ifdef ALLOW_USE_PRINTF
          printf("ERROR: read data fail!\n");
+#endif
       }
 
       totallength = 0;
@@ -247,7 +301,10 @@ finish:
    os_timer_disarm(&upgrade_timer);
 
    if (upgrade_crc_check(system_get_fw_start_sec(), sumlength) != 0) {
+#ifdef ALLOW_USE_PRINTF
       printf("upgrade crc check failed!\n");
+#endif
+
       server->upgrade_flag = false;
       system_upgrade_flag_set(UPGRADE_FLAG_IDLE);
    } else {
@@ -271,7 +328,10 @@ finish:
 
    upgrade_deinit();
 
+#ifdef ALLOW_USE_PRINTF
    printf("\n Exit upgrade task\n");
+#endif
+
    if (server->check_cb != NULL) {
       server->check_cb(server);
    }
@@ -304,7 +364,10 @@ LOCAL void upgrade_check(struct upgrade_server_info *server) {
 
    upgrade_deinit();
 
+#ifdef ALLOW_USE_PRINTF
    printf("\n upgrade fail, exit\n");
+#endif
+
    if (server->check_cb != NULL) {
       server->check_cb(server);
    }

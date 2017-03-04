@@ -63,4 +63,5 @@ void tcp_request_successfully_written_into_buffer_handler_callback();
 void long_polling_request_on_succeed_callback(struct espconn *connection);
 void long_polling_request_on_error_callback(struct espconn *connection);
 void long_polling_request_finish_action(struct espconn *connection);
+void upgrade_firmware();
 #endif

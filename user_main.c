@@ -11,10 +11,11 @@
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
 #include "espconn.h"
-#include "user_main.h"
 #include "utils.h"
 #include "lwip/sys.h"
 #include "lwip/inet.h"
+#include "user_main.h"
+#include "global_printf_usage.h"
 
 unsigned int milliseconds_g;
 int signal_strength_g;
@@ -257,7 +258,12 @@ void autoconnect_task(void *pvParameters) {
 }
 
 void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
-   vTaskDelay(6000 / portTICK_RATE_MS);
+   vTaskDelay(10000 / portTICK_RATE_MS);
+
+#ifdef ALLOW_USE_PRINTF
+   printf("Address of upgrade_firmware function: 0x%x\n", upgrade_firmware);
+#endif
+   upgrade_firmware();
 
    vTaskDelete(NULL);
 }
@@ -293,14 +299,22 @@ void successfull_disconnected_tcp_handler_callback(void *arg) {
    struct connection_user_data *user_data = connection->reserve;
    bool response_received = user_data->response_received;
 
-   //printf("Disconnected callback beginning. Response received: %d\n", response_received);
+#ifdef ALLOW_USE_PRINTF
+   printf("Disconnected callback beginning. Response received: %d\n", response_received);
+#endif
+
    void (*execute_on_succeed)(struct espconn *connection) = user_data->execute_on_long_polling_succeed;
    execute_on_succeed(connection);
-   //printf("Disconnected callback end\n");
+
+#ifdef ALLOW_USE_PRINTF
+   printf("Disconnected callback end\n");
+#endif
 }
 
 void tcp_connection_error_handler_callback(void *arg, sint8 err) {
-   //printf("Connection error callback. Error code: %d\n", err);
+#ifdef ALLOW_USE_PRINTF
+   printf("Connection error callback. Error code: %d\n", err);
+#endif
 
    struct espconn *connection = arg;
    struct connection_user_data *user_data = connection->reserve;
@@ -322,7 +336,10 @@ void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned sho
          char *response = malloc(len);
          memcpy(response, pdata, len);
          user_data->response = response;
-         //printf("Response length: %d, content: %s\n", len, pdata);
+
+#ifdef ALLOW_USE_PRINTF
+         printf("Response length: %d, content: %s\n", len, pdata);
+#endif
       }
       free(server_sent);
    }
@@ -340,7 +357,10 @@ void tcp_request_successfully_written_into_buffer_handler_callback() {
 }
 
 void long_polling_request_on_error_callback(struct espconn *connection) {
-   //printf("long_polling_request_on_error_callback\n");
+#ifdef ALLOW_USE_PRINTF
+   printf("long_polling_request_on_error_callback\n");
+#endif
+
    struct connection_user_data *user_data = connection->reserve;
    char *request = user_data->request;
 
@@ -352,7 +372,10 @@ void long_polling_request_on_error_callback(struct espconn *connection) {
 }
 
 void long_polling_request_on_succeed_callback(struct espconn *connection) {
-   //printf("long_polling_request_on_succeed_callback\n");
+#ifdef ALLOW_USE_PRINTF
+   printf("long_polling_request_on_succeed_callback\n");
+#endif
+
    struct connection_user_data *user_data = connection->reserve;
 
    if (!user_data->response_received) {
@@ -362,7 +385,10 @@ void long_polling_request_on_succeed_callback(struct espconn *connection) {
 
    char *turn_on_true_json_element = get_string_from_rom(TURN_ON_TRUE_JSON_ELEMENT);
 
-   //printf("Response from long_polling_request_on_succeed_callback:\n%s", user_data->response);
+#ifdef ALLOW_USE_PRINTF
+   printf("Response from long_polling_request_on_succeed_callback:\n%s", user_data->response);
+#endif
+
    if (strstr(user_data->response, turn_on_true_json_element)) {
       pin_output_set(PROJECTOR_RELAY_PIN);
    } else {
@@ -396,7 +422,10 @@ void long_polling_request_finish_action(struct espconn *connection) {
 
    if (user_data->timeout_request_supervisor_task != NULL) {
       vTaskDelete(user_data->timeout_request_supervisor_task);
-      //printf("timeout_request_supervisor_task exists\n");
+
+#ifdef ALLOW_USE_PRINTF
+      printf("timeout_request_supervisor_task exists\n");
+#endif
    }
    espconn_delete(connection);
    xSemaphoreGive(long_polling_request_semaphore_g);
@@ -404,15 +433,24 @@ void long_polling_request_finish_action(struct espconn *connection) {
 
 void timeout_request_supervisor_task(void *pvParameters) {
    vTaskDelay(LONG_POLLING_REQUEST_DURATION_TIME);
-   //printf("Request timeout\n");
+
+#ifdef ALLOW_USE_PRINTF
+   printf("Request timeout\n");
+#endif
 
    struct espconn *connection = pvParameters;
 
    if (connection->state == ESPCONN_CONNECT) {
-      //printf("Was connected\n");
+#ifdef ALLOW_USE_PRINTF
+      printf("Was connected\n");
+#endif
+
       espconn_disconnect(connection);
    } else {
-      //printf("Some another connection timeout error\n");
+#ifdef ALLOW_USE_PRINTF
+      printf("Some another connection timeout error\n");
+#endif
+
       struct connection_user_data *user_data = connection->reserve;
 
       // To not delete this task in other functions
@@ -428,11 +466,16 @@ void ota_finished_callback(void *arg) {
    struct upgrade_server_info *update = arg;
 
    if (update->upgrade_flag == true) {
+#ifdef ALLOW_USE_PRINTF
       printf("[OTA] success; rebooting!\n");
+#endif
+
       system_upgrade_flag_set(UPGRADE_FLAG_FINISH);
       system_upgrade_reboot();
    } else {
+#ifdef ALLOW_USE_PRINTF
       printf("[OTA] failed!\n");
+#endif
    }
 
    free(&update->sockaddrin);
@@ -441,6 +484,10 @@ void ota_finished_callback(void *arg) {
 }
 
 void upgrade_firmware() {
+#ifdef ALLOW_USE_PRINTF
+   printf("Software is running from: %s\n", system_upgrade_userbin_check() ? "user2.bin" : "user1.bin");
+#endif
+
    struct upgrade_server_info *upgrade_server = (struct upgrade_server_info *) zalloc(sizeof(struct upgrade_server_info));
    struct sockaddr_in *sockaddrin = (struct sockaddr_in *) zalloc(sizeof(struct sockaddr_in));
 
@@ -510,7 +557,9 @@ void send_long_polling_request_task(void *pvParameters) {
          free(request_template);
          free(server_ip_address);
 
-         //printf("Request created: %s\n", request);
+#ifdef ALLOW_USE_PRINTF
+         printf("Request created: %s\n", request);
+#endif
 
          struct espconn connection;
          struct connection_user_data user_data;
@@ -541,7 +590,10 @@ void send_long_polling_request_task(void *pvParameters) {
          //espconn_regist_write_finish(&connection, tcp_request_successfully_written_into_buffer_handler_callback);
          int connection_status = espconn_connect(&connection);
 
-         //printf("Connection status: ");
+#ifdef ALLOW_USE_PRINTF
+         printf("Connection status: ");
+#endif
+
          switch (connection_status) {
             case ESPCONN_OK:
                xTaskCreate(timeout_request_supervisor_task, "timeout_request_supervisor_task", 256, &connection, 1, &user_data.timeout_request_supervisor_task);
@@ -653,8 +705,8 @@ void user_init(void) {
    xTaskCreate(autoconnect_task, "autoconnect_task", 256, NULL, 1, NULL);
    xTaskCreate(scan_access_point_task, "scan_access_point_task", 256, NULL, 1, NULL);
 
-   vSemaphoreCreateBinary(long_polling_request_semaphore_g);
+   /*vSemaphoreCreateBinary(long_polling_request_semaphore_g);
    xSemaphoreGive(long_polling_request_semaphore_g);
-   xTaskCreate(send_long_polling_request_task, "send_long_polling_request_task", 384, NULL, 1, NULL);
-   //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 176, NULL, 1, NULL);
+   xTaskCreate(send_long_polling_request_task, "send_long_polling_request_task", 384, NULL, 1, NULL);*/
+   xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 1, NULL);
 }
