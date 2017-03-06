@@ -18,7 +18,11 @@
 #include "freertos/task.h"
 #include "upgrade.h"
 
-#define ALLOW_USE_PRINTF
+#ifndef true // needed only for Eclipse
+   typedef unsigned char bool;
+   #define true 1
+   #define false 0
+#endif
 
 /*the size cannot be bigger than below*/
 #define UPGRADE_DATA_SEG_LEN 1460

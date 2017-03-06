@@ -13,6 +13,12 @@
 #include <stdlib.h>
 #include "global_printf_usage.h"
 
+#ifndef true // needed only for Eclipse
+   typedef unsigned char bool;
+   #define true 1
+   #define false 0
+#endif
+
 #define BUFSIZE     512
 #define CRC_BLOCK_SIZE 512
 uint16 start_sec;

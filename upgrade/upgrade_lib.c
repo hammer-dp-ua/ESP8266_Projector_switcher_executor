@@ -13,6 +13,12 @@
 #include "upgrade.h"
 #include "global_printf_usage.h"
 
+#ifndef true // needed only for Eclipse
+   typedef unsigned char bool;
+   #define true 1
+   #define false 0
+#endif
+
 struct upgrade_param {
    uint32 fw_bin_addr; // .bin start address
    uint16 fw_bin_sec; // .bin start flash sector multiplier

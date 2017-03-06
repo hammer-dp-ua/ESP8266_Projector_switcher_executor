@@ -52,7 +52,7 @@ struct connection_user_data {
 };
 
 void scan_access_point_task(void *pvParameters);
-void send_long_polling_request_task(void *pvParameters);
+void send_long_polling_requests_task(void *pvParameters);
 void autoconnect_task(void *pvParameters);
 void successfull_connected_tcp_handler_callback(void *arg);
 void successfull_disconnected_tcp_handler_callback();

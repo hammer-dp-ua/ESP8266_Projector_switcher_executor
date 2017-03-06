@@ -69,7 +69,6 @@ uint32 user_rf_cal_sector_set(void) {
          rf_cal_sec = 0;
          break;
    }
-
    return rf_cal_sec;
 }
 
@@ -471,7 +470,6 @@ void ota_finished_callback(void *arg) {
 #endif
 
       system_upgrade_flag_set(UPGRADE_FLAG_FINISH);
-      system_upgrade_reboot();
    } else {
 #ifdef ALLOW_USE_PRINTF
       printf("[OTA] failed!\n");
@@ -481,6 +479,8 @@ void ota_finished_callback(void *arg) {
    free(&update->sockaddrin);
    free(update->url);
    free(update);
+
+   system_upgrade_reboot();
 }
 
 void upgrade_firmware() {
@@ -514,7 +514,7 @@ void upgrade_firmware() {
    system_upgrade_start(upgrade_server);
 }
 
-void send_long_polling_request_task(void *pvParameters) {
+void send_long_polling_requests_task(void *pvParameters) {
    //vTaskDelay(5000 / portTICK_RATE_MS);
    for (;;) {
       if (read_output_pin_state(AP_CONNECTION_STATUS_LED_PIN) && xSemaphoreTake(long_polling_request_semaphore_g, portMAX_DELAY) == pdTRUE) {
@@ -597,19 +597,34 @@ void send_long_polling_request_task(void *pvParameters) {
          switch (connection_status) {
             case ESPCONN_OK:
                xTaskCreate(timeout_request_supervisor_task, "timeout_request_supervisor_task", 256, &connection, 1, &user_data.timeout_request_supervisor_task);
-               //printf("Connected\n");
+
+#ifdef ALLOW_USE_PRINTF
+               printf("Connected\n");
+#endif
                break;
             case ESPCONN_RTE:
-               //printf("Routing problem\n");
+#ifdef ALLOW_USE_PRINTF
+               printf("Routing problem\n");
+#endif
+
                break;
             case ESPCONN_MEM:
-               //printf("Out of memory\n");
+#ifdef ALLOW_USE_PRINTF
+               printf("Out of memory\n");
+#endif
+
                break;
             case ESPCONN_ISCONN:
-               //printf("Already connected\n");
+#ifdef ALLOW_USE_PRINTF
+               printf("Already connected\n");
+#endif
+
                break;
             case ESPCONN_ARG:
-               //printf("Illegal argument\n");
+#ifdef ALLOW_USE_PRINTF
+               printf("Illegal argument\n");
+#endif
+
                break;
          }
 
@@ -668,18 +683,18 @@ void set_default_wi_fi_settings() {
    char *current_ip = ipaddr_ntoa(&current_ip_info.ip);
    char *own_ip_address = get_string_from_rom(OWN_IP_ADDRESS);
 
-   if (strncmp(current_ip, own_ip_address, 15) != 0) {
-      char *own_netmask = get_string_from_rom(OWN_NETMASK);
-      char *own_getaway_address = get_string_from_rom(OWN_GETAWAY_ADDRESS);
-      struct ip_info ip_info_to_set;
+   //if (strncmp(current_ip, own_ip_address, 15) > 0) {
+   char *own_netmask = get_string_from_rom(OWN_NETMASK);
+   char *own_getaway_address = get_string_from_rom(OWN_GETAWAY_ADDRESS);
+   struct ip_info ip_info_to_set;
 
-      ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
-      ip_info_to_set.netmask.addr = ipaddr_addr(own_netmask);
-      ip_info_to_set.gw.addr = ipaddr_addr(own_getaway_address);
-      wifi_set_ip_info(STATION_IF, &ip_info_to_set);
-      free(own_netmask);
-      free(own_getaway_address);
-   }
+   ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
+   ip_info_to_set.netmask.addr = ipaddr_addr(own_netmask);
+   ip_info_to_set.gw.addr = ipaddr_addr(own_getaway_address);
+   wifi_set_ip_info(STATION_IF, &ip_info_to_set);
+   free(own_netmask);
+   free(own_getaway_address);
+   //}
    free(current_ip);
    free(own_ip_address);
 }
@@ -705,8 +720,8 @@ void user_init(void) {
    xTaskCreate(autoconnect_task, "autoconnect_task", 256, NULL, 1, NULL);
    xTaskCreate(scan_access_point_task, "scan_access_point_task", 256, NULL, 1, NULL);
 
-   /*vSemaphoreCreateBinary(long_polling_request_semaphore_g);
+   vSemaphoreCreateBinary(long_polling_request_semaphore_g);
    xSemaphoreGive(long_polling_request_semaphore_g);
-   xTaskCreate(send_long_polling_request_task, "send_long_polling_request_task", 384, NULL, 1, NULL);*/
-   xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 1, NULL);
+   xTaskCreate(send_long_polling_requests_task, "send_long_polling_requests_task", 384, NULL, 1, NULL);
+   //xTaskCreate(print_some_stuff_task, "print_some_stuff_task", 256, NULL, 1, NULL);
 }
