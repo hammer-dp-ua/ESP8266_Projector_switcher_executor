@@ -537,7 +537,7 @@ void send_long_polling_requests_task(void *pvParameters) {
          char errors_counter[5];
          sprintf(errors_counter, "%d", errors_counter_g);
          char build_timestamp[30];
-         sprintf(build_timestamp, "%s", __TIMESTAMP__);
+         //sprintf(build_timestamp, "%s", __TIMESTAMP__);
          char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, build_timestamp, NULL};
          char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
          char *request_payload = set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);

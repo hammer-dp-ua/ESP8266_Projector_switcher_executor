@@ -22,8 +22,8 @@ GEN_IMAGES= eagle.app.v6.out
 GEN_BINS= eagle.app.v6.bin
 SPECIAL_MKTARGETS=$(APP_MKTARGETS)
 SUBDIRS=    \
-	user	\
-	upgrade_lib
+   user  \
+	upgrade
 
 endif # } PDIR
 
@@ -47,22 +47,21 @@ ifeq ($(FLAVOR),release)
 endif
 
 COMPONENTS_eagle.app.v6 = \
-	user/libuser.a  \
-	sample_lib/libsample.a	\
-	upgrade_lib/libupgrade.a
+   user/libuser.a \
+	upgrade/libupgrade.a
 
 LINKFLAGS_eagle.app.v6 = \
 	-L$(SDK_PATH)/lib        \
 	-Wl,--gc-sections   \
 	-nostdlib	\
-    -T$(LD_FILE)   \
+   -T$(LD_FILE)   \
 	-Wl,--no-check-sections	\
-    -u call_user_start	\
+   -u call_user_start	\
 	-Wl,-static						\
 	-Wl,--start-group					\
 	-lcirom \
 	-lcrypto	\
-        -ldriver \
+   -ldriver \
 	-lespconn	\
 	-lespnow	\
 	-lfreertos	\
@@ -128,7 +127,7 @@ DDEFINES +=				\
 #
 
 INCLUDES := $(INCLUDES) -I $(PDIR)include
-sinclude $(SDK_PATH)/Makefile
+include $(SDK_PATH)/Makefile
 
 .PHONY: FORCE
 FORCE:
