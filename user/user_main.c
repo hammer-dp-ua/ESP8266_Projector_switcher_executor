@@ -682,18 +682,18 @@ void set_default_wi_fi_settings() {
    char *current_ip = ipaddr_ntoa(&current_ip_info.ip);
    char *own_ip_address = get_string_from_rom(OWN_IP_ADDRESS);
 
-   //if (strncmp(current_ip, own_ip_address, 15) > 0) {
-   char *own_netmask = get_string_from_rom(OWN_NETMASK);
-   char *own_getaway_address = get_string_from_rom(OWN_GETAWAY_ADDRESS);
-   struct ip_info ip_info_to_set;
+   if (strncmp(current_ip, own_ip_address, 15) != 0) {
+      char *own_netmask = get_string_from_rom(OWN_NETMASK);
+      char *own_getaway_address = get_string_from_rom(OWN_GETAWAY_ADDRESS);
+      struct ip_info ip_info_to_set;
 
-   ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
-   ip_info_to_set.netmask.addr = ipaddr_addr(own_netmask);
-   ip_info_to_set.gw.addr = ipaddr_addr(own_getaway_address);
-   wifi_set_ip_info(STATION_IF, &ip_info_to_set);
-   free(own_netmask);
-   free(own_getaway_address);
-   //}
+      ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
+      ip_info_to_set.netmask.addr = ipaddr_addr(own_netmask);
+      ip_info_to_set.gw.addr = ipaddr_addr(own_getaway_address);
+      wifi_set_ip_info(STATION_IF, &ip_info_to_set);
+      free(own_netmask);
+      free(own_getaway_address);
+   }
    free(current_ip);
    free(own_ip_address);
 }
@@ -717,6 +717,7 @@ void user_init(void) {
 
    pins_config();
    wifi_set_event_handler_cb(wifi_event_handler_callback);
+   vTaskDelay(5000 / portTICK_RATE_MS);
    set_default_wi_fi_settings();
    espconn_init();
 

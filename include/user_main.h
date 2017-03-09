@@ -16,12 +16,12 @@
 #define UPDATE_FIRMWARE_FLAG                       4
 
 #define LONG_POLLING_REQUEST_IDLE_TIME_ON_ERROR (10000 / portTICK_RATE_MS) // 10 sec
-#define LONG_POLLING_REQUEST_DURATION_TIME (1.5 * 60 * 1000 / portTICK_RATE_MS) // 5.5 mins
+#define LONG_POLLING_REQUEST_DURATION_TIME (5.5 * 60 * 1000 / portTICK_RATE_MS) // 5.5 mins
 
 char RESPONSE_OK_STATUS[] ICACHE_RODATA_ATTR = "200 OK";
 char RESPONSE_SERVER_SENT_OK[] ICACHE_RODATA_ATTR = "\"statusCode\":\"OK\"";
 char PROJECTOR_DEFERRED_POST_REQUEST[] ICACHE_RODATA_ATTR =
-      "POST /server/esp8266/testDeferred HTTP/1.1\r\n"
+      "POST /server/esp8266/projectorDeferred HTTP/1.1\r\n"
       "Content-Length: <1>\r\n"
       "Host: <2>\r\n"
       "User-Agent: ESP8266\r\n"
