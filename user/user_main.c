@@ -470,24 +470,23 @@ void ota_finished_callback(void *arg) {
 #endif
 
       system_upgrade_flag_set(UPGRADE_FLAG_FINISH);
+      system_upgrade_reboot();
    } else {
 #ifdef ALLOW_USE_PRINTF
       printf("[OTA] failed!\n");
 #endif
+
+      system_restart();
    }
 
    free(&update->sockaddrin);
    free(update->url);
    free(update);
 
-   system_upgrade_reboot();
+
 }
 
 void upgrade_firmware() {
-#ifdef ALLOW_USE_PRINTF
-   printf("Software is running from: %s\n", system_upgrade_userbin_check() ? "user2.bin" : "user1.bin");
-#endif
-
    struct upgrade_server_info *upgrade_server = (struct upgrade_server_info *) zalloc(sizeof(struct upgrade_server_info));
    struct sockaddr_in *sockaddrin = (struct sockaddr_in *) zalloc(sizeof(struct sockaddr_in));
 
@@ -537,7 +536,7 @@ void send_long_polling_requests_task(void *pvParameters) {
          char errors_counter[5];
          sprintf(errors_counter, "%d", errors_counter_g);
          char build_timestamp[30];
-         //sprintf(build_timestamp, "%s", __TIMESTAMP__);
+         sprintf(build_timestamp, "%s", __TIMESTAMP__);
          char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, build_timestamp, NULL};
          char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
          char *request_payload = set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);
@@ -711,6 +710,10 @@ pins_config() {
 void user_init(void) {
    uart_init_new();
    UART_SetBaudrate(UART0, 115200);
+
+#ifdef ALLOW_USE_PRINTF
+   printf("\nSoftware is running from: %s\n", system_upgrade_userbin_check() ? "user2.bin" : "user1.bin");
+#endif
 
    pins_config();
    wifi_set_event_handler_cb(wifi_event_handler_callback);

@@ -68,7 +68,7 @@ static unsigned int ICACHE_FLASH_ATTR crc32(unsigned int crc, unsigned char *buf
    return crc;
 }
 
-static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, unsigned int *img_crc) {
+static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, int *img_crc) {
    int fd;
    int ret;
    int i = 0;
@@ -85,6 +85,7 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, unsigned int *
    }
 
    unsigned int crc = 0xffffffff;
+
    uint16 sec_block = sumlength / CRC_BLOCK_SIZE;
    uint32 sec_last = sumlength % CRC_BLOCK_SIZE;
 
@@ -120,7 +121,7 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, unsigned int *
       crc = crc32(crc, buf, sec_last);
    }
 
-   *img_crc = crc;
+   *img_crc = abs(crc);
    free(crc_table);
    free(buf);
    return 0;
@@ -128,8 +129,8 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, unsigned int *
 
 int ICACHE_FLASH_ATTR upgrade_crc_check(uint16 fw_bin_sec, unsigned int sumlength) {
    int ret;
-   unsigned int img_crc;
-   unsigned int flash_crc = 0xFF;
+   int img_crc;
+   int expected_crc = 0xFF;
 
    start_sec = fw_bin_sec;
 
@@ -143,16 +144,17 @@ int ICACHE_FLASH_ATTR upgrade_crc_check(uint16 fw_bin_sec, unsigned int sumlengt
    }
 
 #ifdef ALLOW_USE_PRINTF
-   printf("img_crc = %u = 0x%x \n", img_crc, img_crc);
+   printf("Wrote firmware CRC: %d = 0x%x\n", img_crc, img_crc);
 #endif
 
-   spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + sumlength - 4, &flash_crc, 4);
+   spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + sumlength - 4, &expected_crc, 4);
+   expected_crc = abs(expected_crc);
 
 #ifdef ALLOW_USE_PRINTF
-   printf("flash_crc = %u = 0x%x\n", flash_crc, flash_crc);
+   printf("Expected CRC: %d = 0x%x\n", expected_crc, expected_crc);
 #endif
 
-   if (img_crc == flash_crc) {
+   if (img_crc == expected_crc) {
       return 0;
    } else {
       return -1;

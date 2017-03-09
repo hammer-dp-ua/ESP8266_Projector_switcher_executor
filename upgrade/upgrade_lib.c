@@ -79,10 +79,6 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
 
       secnm = ((upgrade->fw_bin_addr + len) >> 12) + (len & 0xfff ? 1 : 0);
 
-#ifdef ALLOW_USE_PRINTF
-      printf("Last sector number: %d\n", secnm);
-#endif
-
       while (upgrade->fw_bin_sec_earse != secnm) {
          taskENTER_CRITICAL();
 
@@ -92,12 +88,7 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
 #endif
 
             break;
-         } else {
-#ifdef ALLOW_USE_PRINTF
-            printf("%d sector is being erased\n", upgrade->fw_bin_sec_earse);
-#endif
-
-            spi_flash_erase_sector(upgrade->fw_bin_sec_earse);
+         } else {spi_flash_erase_sector(upgrade->fw_bin_sec_earse);
             upgrade->fw_bin_sec_earse++;
          }
          taskEXIT_CRITICAL();
@@ -105,7 +96,7 @@ LOCAL bool system_upgrade_internal(struct upgrade_param *upgrade, uint8 *data, u
       }
 
 #ifdef ALLOW_USE_PRINTF
-      printf("flash erase over\n");
+      printf("flash erase over. Last erased sector: %u\n", upgrade->fw_bin_sec_earse - 1);
 #endif
 
       return true;

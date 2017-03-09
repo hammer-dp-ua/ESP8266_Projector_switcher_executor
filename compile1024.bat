@@ -8,8 +8,9 @@ Rem set BIN_PATH=/c/esp8266_bin
 
 rem set SDK_PATH=C:\Users\USER\ESP8266\ESP8266_RTOS_SDK
 set SDK_PATH=/c/Users/USER/ESP8266/ESP8266_RTOS_SDK
-rem set BIN_PATH=C:\Users\USER\ESP8266\ESP8266_RTOS_SDK\bin
+set BIN_PATH_WIN=C:\Users\USER\ESP8266\ESP8266_RTOS_SDK\bin
 set BIN_PATH=/c/Users/USER/ESP8266/ESP8266_RTOS_SDK/bin
+set FOTA_PATH=Z:\USER\workspace\ESP8266_FOTA
 
 if not %SDK_PATH% == "" (
     echo SDK_PATH: %SDK_PATH%
@@ -26,7 +27,11 @@ if not %BIN_PATH% == "" (
 )
 
 make clean
-
 make COMPILE= BOOT=new APP=1 SPI_SPEED=40 SPI_MODE=QIO SPI_SIZE_MAP=2
+cp %BIN_PATH_WIN%\upgrade\user1.1024.new.2.bin %FOTA_PATH%\user1.bin
+
+make clean
+make COMPILE= BOOT=new APP=2 SPI_SPEED=40 SPI_MODE=QIO SPI_SIZE_MAP=2
+cp %BIN_PATH_WIN%\upgrade\user2.1024.new.2.bin %FOTA_PATH%\user2.bin
 
 :end
