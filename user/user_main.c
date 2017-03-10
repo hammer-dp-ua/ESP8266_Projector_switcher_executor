@@ -482,11 +482,25 @@ void ota_finished_callback(void *arg) {
    free(&update->sockaddrin);
    free(update->url);
    free(update);
+}
 
+void blink_leds_while_updating_task(void *pvParameters) {
+   for (;;) {
+      if (read_output_pin_state(AP_CONNECTION_STATUS_LED_PIN)) {
+         pin_output_reset(AP_CONNECTION_STATUS_LED_PIN);
+         pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
+      } else {
+         pin_output_set(AP_CONNECTION_STATUS_LED_PIN);
+         pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
+      }
 
+      vTaskDelay(100 / portTICK_RATE_MS);
+   }
 }
 
 void upgrade_firmware() {
+   xTaskCreate(blink_leds_while_updating_task, "blink_leds_while_updating_task", 256, NULL, 1, NULL);
+
    struct upgrade_server_info *upgrade_server = (struct upgrade_server_info *) zalloc(sizeof(struct upgrade_server_info));
    struct sockaddr_in *sockaddrin = (struct sockaddr_in *) zalloc(sizeof(struct sockaddr_in));
 
@@ -703,6 +717,9 @@ pins_config() {
    //output_pins.GPIO_IntrType = GPIO_PIN_INTR_ANYEDGE;
    output_pins.GPIO_Mode = GPIO_Mode_Output;
    output_pins.GPIO_Pin = AP_CONNECTION_STATUS_LED_PIN | SERVER_AVAILABILITY_STATUS_LED_PIN | PROJECTOR_RELAY_PIN;
+   pin_output_reset(AP_CONNECTION_STATUS_LED_PIN);
+   pin_output_reset(SERVER_AVAILABILITY_STATUS_LED_PIN);
+   pin_output_reset(PROJECTOR_RELAY_PIN);
    //output_pins.GPIO_Pullup = GPIO_PullUp_DIS;
    gpio_config(&output_pins);
 }
