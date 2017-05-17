@@ -17,7 +17,7 @@
 #include "user_main.h"
 #include "global_printf_usage.h"
 
-unsigned int milliseconds_g;
+unsigned int milliseconds_counter_g;
 int signal_strength_g;
 unsigned short errors_counter_g;
 LOCAL os_timer_t millisecons_time_serv_g;
@@ -72,143 +72,18 @@ uint32 user_rf_cal_sector_set(void) {
    return rf_cal_sec;
 }
 
-/**
- * @param pin : GPIO pin GPIO_Pin_x
- */
-void pin_output_set(unsigned int pin) {
-   GPIO_REG_WRITE(GPIO_OUT_W1TS_ADDRESS, pin);
-}
-
-/**
- * @param pin : GPIO pin GPIO_Pin_x
- */
-void pin_output_reset(unsigned int pin) {
-   GPIO_REG_WRITE(GPIO_OUT_W1TC_ADDRESS, pin);
-}
-
-/**
- * @param pin : GPIO pin GPIO_Pin_x
- */
-bool read_output_pin_state(unsigned int pin) {
-   return (GPIO_REG_READ(GPIO_OUT_ADDRESS) & pin) ? true : false;
-}
-
-/**
- * @param pin : GPIO pin GPIO_Pin_x
- */
-bool read_input_pin_state(unsigned int pin) {
-   return (GPIO_REG_READ(GPIO_IN_ADDRESS) & pin) ? true : false;
-}
-
-LOCAL void calculate_rom_string_length_or_fill_malloc(unsigned short *string_length, char *result, const char *rom_string) {
-   unsigned char calculate_string_length = *string_length ? 0 : 1;
-   unsigned short calculated_string_length = 0;
-   unsigned int *rom_string_aligned = (unsigned int*) (((unsigned int) (rom_string)) & ~3); // Could be saved in not 4 bytes aligned address
-   unsigned int rom_string_aligned_value = *rom_string_aligned;
-   unsigned char shifted_bytes = (unsigned char) ((unsigned int) (rom_string) - (unsigned int) (rom_string_aligned)); // 0 - 3
-
-   unsigned char shifted_bytes_tmp = shifted_bytes;
-   while (shifted_bytes_tmp < 4) {
-      unsigned int comparable = 0xFF;
-      unsigned char bytes_to_shift = shifted_bytes_tmp * 8;
-      comparable <<= bytes_to_shift;
-      unsigned int current_character_shifted = rom_string_aligned_value & comparable;
-
-      if (current_character_shifted == 0) {
-         break;
-      }
-      shifted_bytes_tmp++;
-
-      if (!calculate_string_length) {
-         char current_character = (char) (current_character_shifted >> bytes_to_shift);
-         *(result + calculated_string_length) = current_character;
-      }
-
-      calculated_string_length++;
-   }
-
-   if (!calculated_string_length) {
-      return;
-   }
-
-   unsigned int *rom_string_aligned_next = rom_string_aligned + 1;
-   while (1) {
-      unsigned int shifted_tmp = 0xFF;
-      unsigned int rom_string_aligned_tmp_value = *rom_string_aligned_next;
-      unsigned char stop = 0;
-
-      while (shifted_tmp) {
-         unsigned int current_character_shifted = rom_string_aligned_tmp_value & shifted_tmp;
-
-         if (current_character_shifted == 0) {
-            stop = 1;
-            break;
-         }
-
-         if (!calculate_string_length) {
-            unsigned char bytes_to_shift;
-
-            if (shifted_tmp == 0xFF) {
-               bytes_to_shift = 0;
-            } else if (shifted_tmp == 0xFF00) {
-               bytes_to_shift = 8;
-            } else if (shifted_tmp == 0xFF0000) {
-               bytes_to_shift = 16;
-            } else {
-               bytes_to_shift = 24;
-            }
-
-            char current_character = (char) (current_character_shifted >> bytes_to_shift);
-            *(result + calculated_string_length) = current_character;
-         }
-
-         calculated_string_length++;
-         shifted_tmp <<= 8;
-      }
-
-      if (stop) {
-         break;
-      }
-      rom_string_aligned_next++;
-   }
-
-   if (calculate_string_length) {
-      *string_length = calculated_string_length;
-   } else {
-      *(result + *string_length) = '\0';
-   }
-}
-
 LOCAL void milliseconds_counter() {
-   milliseconds_g++;
+   milliseconds_counter_g++;
 }
 
 void start_millisecons_counter() {
    os_timer_disarm(&millisecons_time_serv_g);
-   os_timer_setfn(&millisecons_time_serv_g, (os_timer_func_t *)milliseconds_counter, NULL);
-   os_timer_arm(&millisecons_time_serv_g, 1, 1); // 1 ms
+   os_timer_setfn(&millisecons_time_serv_g, (os_timer_func_t *) milliseconds_counter, NULL);
+   os_timer_arm(&millisecons_time_serv_g, 1000 / MILLISECONDS_COUNTER_DIVIDER, 1); // 100 ms
 }
 
 void stop_milliseconds_counter() {
    os_timer_disarm(&millisecons_time_serv_g);
-}
-
-/**
- * Do not forget to call free when a string is not required anymore
- */
-char *get_string_from_rom(const char *rom_string) {
-   unsigned short string_length = 0;
-
-   calculate_rom_string_length_or_fill_malloc(&string_length, NULL, rom_string);
-
-   if (!string_length) {
-      return NULL;
-   }
-
-   char *result = malloc(string_length + 1); // 1 for the last empty character
-
-   calculate_rom_string_length_or_fill_malloc(&string_length, result, rom_string);
-   return result;
 }
 
 // Callback function when AP scanning is completed
@@ -549,9 +424,11 @@ void send_long_polling_requests_task(void *pvParameters) {
          char *device_name = get_string_from_rom(DEVICE_NAME);
          char errors_counter[5];
          sprintf(errors_counter, "%d", errors_counter_g);
+         char uptime[10];
+         sprintf(uptime, "%d", milliseconds_counter_g / MILLISECONDS_COUNTER_DIVIDER);
          char build_timestamp[30];
          sprintf(build_timestamp, "%s", __TIMESTAMP__);
-         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, build_timestamp, NULL};
+         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, uptime, build_timestamp, NULL};
          char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
          char *request_payload = set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);
 
@@ -724,17 +601,41 @@ pins_config() {
    gpio_config(&output_pins);
 }
 
-void user_init(void) {
-   uart_init_new();
-   UART_SetBaudrate(UART0, 115200);
+void uart_config() {
+   UART_WaitTxFifoEmpty(UART0);
 
-#ifdef ALLOW_USE_PRINTF
-   printf("\nSoftware is running from: %s\n", system_upgrade_userbin_check() ? "user2.bin" : "user1.bin");
-#endif
+   UART_ConfigTypeDef uart_config;
+   uart_config.baud_rate         = 115200;
+   uart_config.data_bits         = UART_WordLength_8b;
+   uart_config.parity            = USART_Parity_None;
+   uart_config.stop_bits         = USART_StopBits_1;
+   uart_config.flow_ctrl         = USART_HardwareFlowControl_None;
+   uart_config.UART_RxFlowThresh = 120;
+   uart_config.UART_InverseMask  = UART_None_Inverse;
+   UART_ParamConfig(UART0, &uart_config);
+
+   UART_IntrConfTypeDef uart_intr;
+   uart_intr.UART_IntrEnMask = UART_RXFIFO_TOUT_INT_ENA | UART_FRM_ERR_INT_ENA | UART_RXFIFO_FULL_INT_ENA;
+   uart_intr.UART_RX_FifoFullIntrThresh = 30;
+   uart_intr.UART_RX_TimeOutIntrThresh = 2;
+   uart_intr.UART_TX_FifoEmptyIntrThresh = 20;
+   UART_IntrConfig(UART0, &uart_intr);
+
+   UART_SetPrintPort(UART0);
+}
+
+void user_init(void) {
+   start_millisecons_counter();
+   uart_config();
+
+   #ifdef ALLOW_USE_PRINTF
+   printf("\n Software is running from: %s\n", system_upgrade_userbin_check() ? "user2.bin" : "user1.bin");
+   #endif
+
+   vTaskDelay(5000 / portTICK_RATE_MS);
 
    pins_config();
    wifi_set_event_handler_cb(wifi_event_handler_callback);
-   vTaskDelay(5000 / portTICK_RATE_MS);
    set_default_wi_fi_settings();
    espconn_init();
 

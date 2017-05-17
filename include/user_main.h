@@ -18,6 +18,8 @@
 #define LONG_POLLING_REQUEST_IDLE_TIME_ON_ERROR (10000 / portTICK_RATE_MS) // 10 sec
 #define LONG_POLLING_REQUEST_DURATION_TIME (5.5 * 60 * 1000 / portTICK_RATE_MS) // 5.5 mins
 
+#define MILLISECONDS_COUNTER_DIVIDER 10
+
 char RESPONSE_OK_STATUS[] ICACHE_RODATA_ATTR = "200 OK";
 char RESPONSE_SERVER_SENT_OK[] ICACHE_RODATA_ATTR = "\"statusCode\":\"OK\"";
 char PROJECTOR_DEFERRED_POST_REQUEST[] ICACHE_RODATA_ATTR =
@@ -33,7 +35,8 @@ char PROJECTOR_DEFERRED_REQUEST_PAYLOAD[] ICACHE_RODATA_ATTR =
       "\"serverIsAvailable\":<2>,"
       "\"deviceName\":\"<3>\","
       "\"errors\":\"<4>\","
-      "\"buildTimestamp\":\"<5>\"}";
+      "\"uptime\":\"<5>\","
+      "\"buildTimestamp\":\"<6>\"}";
 char TURN_ON_TRUE_JSON_ELEMENT[] ICACHE_RODATA_ATTR = "\"turnOn\":true";
 char UPDATE_FIRMWARE[] ICACHE_RODATA_ATTR = "\"updateFirmware\":true";
 char FIRMWARE_UPDATE_GET_REQUEST[] ICACHE_RODATA_ATTR =

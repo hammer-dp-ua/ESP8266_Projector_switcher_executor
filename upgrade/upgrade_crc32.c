@@ -37,9 +37,9 @@ int ICACHE_FLASH_ATTR init_crc_table(void) {
 
    crc_table = (unsigned int*) zalloc(256 * 4);
    if (crc_table == NULL) {
-#ifdef ALLOW_USE_PRINTF
+      #ifdef ALLOW_USE_PRINTF
       printf("malloc crc table failed\n");
-#endif
+      #endif
 
       return -1;
    }
@@ -76,9 +76,9 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, int *img_crc) 
    unsigned char *buf = (char *) zalloc(CRC_BLOCK_SIZE);
 
    if (buf == NULL) {
-#ifdef ALLOW_USE_PRINTF
+      #ifdef ALLOW_USE_PRINTF
       printf("malloc crc buf failed\n");
-#endif
+      #endif
 
       free(crc_table);
       return -1;
@@ -94,9 +94,9 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, int *img_crc) 
          free(crc_table);
          free(buf);
 
-#ifdef ALLOW_USE_PRINTF
+         #ifdef ALLOW_USE_PRINTF
          printf("spi_flash_read error %d\n", error);
-#endif
+         #endif
 
          return -1;
       }
@@ -104,17 +104,13 @@ static int ICACHE_FLASH_ATTR calc_img_crc(unsigned int sumlength, int *img_crc) 
    }
 
    if (sec_last) {
-#ifdef ALLOW_USE_PRINTF
-      printf("One more sector\n");
-#endif
-
       if (0 != (error = spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + i * CRC_BLOCK_SIZE, (uint32 *) buf, sec_last))) {
          free(crc_table);
          free(buf);
 
-#ifdef ALLOW_USE_PRINTF
+         #ifdef ALLOW_USE_PRINTF
          printf("spi_flash_read error %d\n", error);
-#endif
+         #endif
 
          return -1;
       }
@@ -143,16 +139,16 @@ int ICACHE_FLASH_ATTR upgrade_crc_check(uint16 fw_bin_sec, unsigned int sumlengt
       return false;
    }
 
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Wrote firmware CRC: %d = 0x%x\n", img_crc, img_crc);
-#endif
+   #endif
 
    spi_flash_read(start_sec * SPI_FLASH_SEC_SIZE + sumlength - 4, &expected_crc, 4);
    expected_crc = abs(expected_crc);
 
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Expected CRC: %d = 0x%x\n", expected_crc, expected_crc);
-#endif
+   #endif
 
    if (img_crc == expected_crc) {
       return 0;
