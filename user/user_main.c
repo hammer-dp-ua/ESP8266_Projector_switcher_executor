@@ -7,6 +7,8 @@
 #include "gpio.h"
 #include "esp_sta.h"
 #include "esp_wifi.h"
+#include "global_definitions.h"
+#include "malloc_logger.h"
 #include "upgrade.h"
 #include "freertos/FreeRTOS.h"
 #include "device_settings.h"
@@ -15,7 +17,6 @@
 #include "lwip/sys.h"
 #include "lwip/inet.h"
 #include "user_main.h"
-#include "global_printf_usage.h"
 
 unsigned int milliseconds_counter_g;
 int signal_strength_g;
@@ -88,7 +89,7 @@ void stop_milliseconds_counter() {
 
 // Callback function when AP scanning is completed
 void get_ap_signal_strength(void *arg, STATUS status) {
-   if (status == OK) {
+   if (status == OK && arg != NULL) {
       struct bss_info *got_bss_info = (struct bss_info *) arg;
 
       signal_strength_g = got_bss_info->rssi;
@@ -105,11 +106,8 @@ void scan_access_point_task(void *pvParameters) {
 
       if (status == STATION_GOT_IP) {
          struct scan_config ap_scan_config;
-         char *default_access_point_name = get_string_from_rom(ACCESS_POINT_NAME);
-
-         ap_scan_config.ssid = default_access_point_name;
+         ap_scan_config.ssid = ACCESS_POINT_NAME;
          wifi_station_scan(&ap_scan_config, get_ap_signal_strength);
-         free(default_access_point_name);
 
          vTaskDelay(rescan_when_connected_task_delay);
       } else {
@@ -134,9 +132,9 @@ void autoconnect_task(void *pvParameters) {
 void ICACHE_FLASH_ATTR print_some_stuff_task(void *pvParameters) {
    vTaskDelay(10000 / portTICK_RATE_MS);
 
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Address of upgrade_firmware function: 0x%x\n", upgrade_firmware);
-#endif
+   #endif
    upgrade_firmware();
 
    vTaskDelete(NULL);
@@ -159,7 +157,7 @@ void successfull_connected_tcp_handler_callback(void *arg) {
    //keepalive_error_code |= espconn_set_keepalive(connection, ESPCONN_KEEPCNT, &espconn_keepcnt_value);
 
    int sent_status = espconn_send(connection, request, request_length);
-   free(request);
+   FREE(request);
    user_data->request = NULL;
 
    if (sent_status != 0) {
@@ -173,22 +171,22 @@ void successfull_disconnected_tcp_handler_callback(void *arg) {
    struct connection_user_data *user_data = connection->reserve;
    bool response_received = user_data->response_received;
 
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Disconnected callback beginning. Response received: %d\n", response_received);
-#endif
+   #endif
 
    void (*execute_on_succeed)(struct espconn *connection) = user_data->execute_on_long_polling_succeed;
    execute_on_succeed(connection);
 
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Disconnected callback end\n");
-#endif
+   #endif
 }
 
 void tcp_connection_error_handler_callback(void *arg, sint8 err) {
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Connection error callback. Error code: %d\n", err);
-#endif
+   #endif
 
    struct espconn *connection = arg;
    struct connection_user_data *user_data = connection->reserve;
@@ -207,15 +205,15 @@ void tcp_response_received_handler_callback(void *arg, char *pdata, unsigned sho
 
       if (strstr(pdata, server_sent)) {
          user_data->response_received = true;
-         char *response = malloc(len);
+         char *response = MALLOC(len, __LINE__, milliseconds_counter_g);
          memcpy(response, pdata, len);
          user_data->response = response;
 
-#ifdef ALLOW_USE_PRINTF
+         #ifdef ALLOW_USE_PRINTF
          printf("Response length: %d, content: %s\n", len, pdata);
-#endif
+         #endif
       }
-      free(server_sent);
+      FREE(server_sent);
    }
 
    // Don't call this API in any espconn callback. If needed, please use system task to trigger espconn_disconnect.
@@ -231,9 +229,9 @@ void tcp_request_successfully_written_into_buffer_handler_callback() {
 }
 
 void long_polling_request_on_error_callback(struct espconn *connection) {
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("long_polling_request_on_error_callback\n");
-#endif
+   #endif
 
    struct connection_user_data *user_data = connection->reserve;
    char *request = user_data->request;
@@ -246,9 +244,9 @@ void long_polling_request_on_error_callback(struct espconn *connection) {
 }
 
 void long_polling_request_on_succeed_callback(struct espconn *connection) {
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("long_polling_request_on_succeed_callback\n");
-#endif
+   #endif
 
    struct connection_user_data *user_data = connection->reserve;
 
@@ -259,22 +257,22 @@ void long_polling_request_on_succeed_callback(struct espconn *connection) {
 
    char *turn_on_true_json_element = get_string_from_rom(TURN_ON_TRUE_JSON_ELEMENT);
 
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Response from long_polling_request_on_succeed_callback:\n%s", user_data->response);
-#endif
+   #endif
 
    if (strstr(user_data->response, turn_on_true_json_element)) {
       pin_output_set(PROJECTOR_RELAY_PIN);
    } else {
       pin_output_reset(PROJECTOR_RELAY_PIN);
    }
-   free(turn_on_true_json_element);
+   FREE(turn_on_true_json_element);
 
    char *update_firmware_json_element = get_string_from_rom(UPDATE_FIRMWARE);
    if (strstr(user_data->response, update_firmware_json_element)) {
       set_flag(&general_flags, UPDATE_FIRMWARE_FLAG);
    }
-   free(update_firmware_json_element);
+   FREE(update_firmware_json_element);
 
    set_flag(&general_flags, SERVER_IS_AVAILABLE_FLAG);
    pin_output_set(SERVER_AVAILABILITY_STATUS_LED_PIN);
@@ -286,20 +284,20 @@ void long_polling_request_finish_action(struct espconn *connection) {
    char *request = user_data->request;
 
    if (request != NULL) {
-      free(request);
+      FREE(request);
       user_data->request = NULL;
    }
    if (user_data->response != NULL) {
-      free(user_data->response);
+      FREE(user_data->response);
       user_data->response = NULL;
    }
 
    if (user_data->timeout_request_supervisor_task != NULL) {
       vTaskDelete(user_data->timeout_request_supervisor_task);
 
-#ifdef ALLOW_USE_PRINTF
-      printf("timeout_request_supervisor_task exists\n");
-#endif
+   #ifdef ALLOW_USE_PRINTF
+   printf("timeout_request_supervisor_task exists\n");
+   #endif
    }
    espconn_delete(connection);
    xSemaphoreGive(long_polling_request_semaphore_g);
@@ -308,22 +306,22 @@ void long_polling_request_finish_action(struct espconn *connection) {
 void timeout_request_supervisor_task(void *pvParameters) {
    vTaskDelay(LONG_POLLING_REQUEST_DURATION_TIME);
 
-#ifdef ALLOW_USE_PRINTF
+   #ifdef ALLOW_USE_PRINTF
    printf("Request timeout\n");
-#endif
+   #endif
 
    struct espconn *connection = pvParameters;
 
    if (connection->state == ESPCONN_CONNECT) {
-#ifdef ALLOW_USE_PRINTF
-      printf("Was connected\n");
-#endif
+   #ifdef ALLOW_USE_PRINTF
+   printf("Was connected\n");
+   #endif
 
       espconn_disconnect(connection);
    } else {
-#ifdef ALLOW_USE_PRINTF
+      #ifdef ALLOW_USE_PRINTF
       printf("Some another connection timeout error\n");
-#endif
+      #endif
 
       struct connection_user_data *user_data = connection->reserve;
 
@@ -340,23 +338,23 @@ void ota_finished_callback(void *arg) {
    struct upgrade_server_info *update = arg;
 
    if (update->upgrade_flag == true) {
-#ifdef ALLOW_USE_PRINTF
+      #ifdef ALLOW_USE_PRINTF
       printf("[OTA] success; rebooting!\n");
-#endif
+      #endif
 
       system_upgrade_flag_set(UPGRADE_FLAG_FINISH);
       system_upgrade_reboot();
    } else {
-#ifdef ALLOW_USE_PRINTF
+      #ifdef ALLOW_USE_PRINTF
       printf("[OTA] failed!\n");
-#endif
+      #endif
 
       system_restart();
    }
 
-   free(&update->sockaddrin);
-   free(update->url);
-   free(update);
+   FREE(&update->sockaddrin);
+   FREE(update->url);
+   FREE(update);
 }
 
 void blink_leds_while_updating_task(void *pvParameters) {
@@ -376,8 +374,10 @@ void blink_leds_while_updating_task(void *pvParameters) {
 void upgrade_firmware() {
    xTaskCreate(blink_leds_while_updating_task, "blink_leds_while_updating_task", 256, NULL, 1, NULL);
 
-   struct upgrade_server_info *upgrade_server = (struct upgrade_server_info *) zalloc(sizeof(struct upgrade_server_info));
-   struct sockaddr_in *sockaddrin = (struct sockaddr_in *) zalloc(sizeof(struct sockaddr_in));
+   struct upgrade_server_info *upgrade_server =
+         (struct upgrade_server_info *) ZALLOC(sizeof(struct upgrade_server_info), __LINE__, milliseconds_counter_g);
+   struct sockaddr_in *sockaddrin =
+         (struct sockaddr_in *) ZALLOC(sizeof(struct sockaddr_in), __LINE__, milliseconds_counter_g);
 
    upgrade_server->sockaddrin = *sockaddrin;
    upgrade_server->sockaddrin.sin_family = AF_INET;
@@ -396,8 +396,8 @@ void upgrade_firmware() {
    char *url_parameters[] = {file_to_download, server_ip, NULL};
    char *url = set_string_parameters(url_pattern, url_parameters);
 
-   free(url_pattern);
-   free(server_ip);
+   FREE(url_pattern);
+   FREE(server_ip);
    upgrade_server->url = url;
    system_upgrade_start(upgrade_server);
 }
@@ -418,38 +418,54 @@ void send_long_polling_requests_task(void *pvParameters) {
             continue;
          }
 
-         char signal_strength[4];
-         sprintf(signal_strength, "%d", signal_strength_g);
+         char signal_strength[5];
+         snprintf(signal_strength, 5, "%d", signal_strength_g);
          char *server_is_available = read_flag(general_flags, SERVER_IS_AVAILABLE_FLAG) ? "true" : "false";
          char *device_name = get_string_from_rom(DEVICE_NAME);
-         char errors_counter[5];
-         sprintf(errors_counter, "%d", errors_counter_g);
+         char errors_counter[6];
+         snprintf(errors_counter, 6, "%d", errors_counter_g);
          char uptime[10];
-         sprintf(uptime, "%d", milliseconds_counter_g / MILLISECONDS_COUNTER_DIVIDER);
+         snprintf(uptime, 10, "%d", milliseconds_counter_g / MILLISECONDS_COUNTER_DIVIDER);
          char build_timestamp[30];
-         sprintf(build_timestamp, "%s", __TIMESTAMP__);
-         char *projector_deferred_request_payload_template_parameters[] = {signal_strength, server_is_available, device_name, errors_counter, uptime, build_timestamp, NULL};
-         char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
-         char *request_payload = set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);
+         char free_heap_space[7];
+         snprintf(free_heap_space, 7, "%u", xPortGetFreeHeapSize());
+         snprintf(build_timestamp, 30, "%s", __TIMESTAMP__);
 
-         free(device_name);
-         free(projector_deferred_request_payload_template);
+         char *reset_reason = "";
+
+         if (!read_flag(general_flags, FIRST_STATUS_INFO_SENT_FLAG)) {
+            set_flag(&general_flags, FIRST_STATUS_INFO_SENT_FLAG);
+
+            reset_reason = generate_reset_reason();
+         }
+
+         char *projector_deferred_request_payload_template_parameters[] =
+               {signal_strength, server_is_available, device_name, errors_counter, uptime, build_timestamp, free_heap_space, reset_reason, NULL};
+         char *projector_deferred_request_payload_template = get_string_from_rom(PROJECTOR_DEFERRED_REQUEST_PAYLOAD);
+         char *request_payload =
+               set_string_parameters(projector_deferred_request_payload_template, projector_deferred_request_payload_template_parameters);
+
+         FREE(device_name);
+         FREE(projector_deferred_request_payload_template);
+         if (strlen(reset_reason) > 1) {
+            FREE(reset_reason);
+         }
 
          char *request_template = get_string_from_rom(PROJECTOR_DEFERRED_POST_REQUEST);
          unsigned short request_payload_length = strnlen(request_payload, 0xFFFF);
-         char request_payload_length_string[3];
-         sprintf(request_payload_length_string, "%d", request_payload_length);
+         char request_payload_length_string[4];
+         snprintf(request_payload_length_string, 4, "%d", request_payload_length);
          char *server_ip_address = get_string_from_rom(SERVER_IP_ADDRESS);
          char *request_template_parameters[] = {request_payload_length_string, server_ip_address, request_payload, NULL};
          char *request = set_string_parameters(request_template, request_template_parameters);
 
-         free(request_payload);
-         free(request_template);
-         free(server_ip_address);
+         FREE(request_payload);
+         FREE(request_template);
+         FREE(server_ip_address);
 
-#ifdef ALLOW_USE_PRINTF
+         #ifdef ALLOW_USE_PRINTF
          printf("Request created: %s\n", request);
-#endif
+         #endif
 
          struct espconn connection;
          struct connection_user_data user_data;
@@ -480,40 +496,41 @@ void send_long_polling_requests_task(void *pvParameters) {
          //espconn_regist_write_finish(&connection, tcp_request_successfully_written_into_buffer_handler_callback);
          int connection_status = espconn_connect(&connection);
 
-#ifdef ALLOW_USE_PRINTF
+         #ifdef ALLOW_USE_PRINTF
          printf("Connection status: ");
-#endif
+         #endif
 
          switch (connection_status) {
             case ESPCONN_OK:
                xTaskCreate(timeout_request_supervisor_task, "timeout_request_supervisor_task", 256, &connection, 1, &user_data.timeout_request_supervisor_task);
 
-#ifdef ALLOW_USE_PRINTF
+               #ifdef ALLOW_USE_PRINTF
                printf("Connected\n");
-#endif
+               #endif
+
                break;
             case ESPCONN_RTE:
-#ifdef ALLOW_USE_PRINTF
+               #ifdef ALLOW_USE_PRINTF
                printf("Routing problem\n");
-#endif
+               #endif
 
                break;
             case ESPCONN_MEM:
-#ifdef ALLOW_USE_PRINTF
+               #ifdef ALLOW_USE_PRINTF
                printf("Out of memory\n");
-#endif
+               #endif
 
                break;
             case ESPCONN_ISCONN:
-#ifdef ALLOW_USE_PRINTF
+               #ifdef ALLOW_USE_PRINTF
                printf("Already connected\n");
-#endif
+               #endif
 
                break;
             case ESPCONN_ARG:
-#ifdef ALLOW_USE_PRINTF
+               #ifdef ALLOW_USE_PRINTF
                printf("Illegal argument\n");
-#endif
+               #endif
 
                break;
          }
@@ -537,56 +554,6 @@ void wifi_event_handler_callback(System_Event_t *event) {
          pin_output_reset(AP_CONNECTION_STATUS_LED_PIN);
          break;
    }
-}
-
-void set_default_wi_fi_settings() {
-   wifi_station_set_auto_connect(false);
-   wifi_station_set_reconnect_policy(false);
-   wifi_station_dhcpc_stop();
-   wifi_set_opmode(STATION_MODE);
-
-   STATION_STATUS station_status = wifi_station_get_connect_status();
-   if (station_status == STATION_GOT_IP) {
-      wifi_station_disconnect();
-   }
-
-   struct station_config station_config_settings;
-
-   wifi_station_get_config_default(&station_config_settings);
-
-   char *default_access_point_name = get_string_from_rom(ACCESS_POINT_NAME);
-   char *default_access_point_password = get_string_from_rom(ACCESS_POINT_PASSWORD);
-
-   if (strncmp(default_access_point_name, station_config_settings.ssid, 32) != 0
-         || strncmp(default_access_point_password, station_config_settings.password, 64) != 0) {
-      struct station_config station_config_settings_to_save;
-
-      memcpy(&station_config_settings_to_save.ssid, default_access_point_name, 32);
-      memcpy(&station_config_settings_to_save.password, default_access_point_password, 64);
-      wifi_station_set_config(&station_config_settings_to_save);
-   }
-   free(default_access_point_name);
-   free(default_access_point_password);
-
-   struct ip_info current_ip_info;
-   wifi_get_ip_info(STATION_IF, &current_ip_info);
-   char *current_ip = ipaddr_ntoa(&current_ip_info.ip);
-   char *own_ip_address = get_string_from_rom(OWN_IP_ADDRESS);
-
-   if (strncmp(current_ip, own_ip_address, 15) != 0) {
-      char *own_netmask = get_string_from_rom(OWN_NETMASK);
-      char *own_getaway_address = get_string_from_rom(OWN_GETAWAY_ADDRESS);
-      struct ip_info ip_info_to_set;
-
-      ip_info_to_set.ip.addr = ipaddr_addr(own_ip_address);
-      ip_info_to_set.netmask.addr = ipaddr_addr(own_netmask);
-      ip_info_to_set.gw.addr = ipaddr_addr(own_getaway_address);
-      wifi_set_ip_info(STATION_IF, &ip_info_to_set);
-      free(own_netmask);
-      free(own_getaway_address);
-   }
-   free(current_ip);
-   free(own_ip_address);
 }
 
 pins_config() {

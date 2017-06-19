@@ -14,6 +14,7 @@
 #define LONG_POLLING_REQUEST_ERROR_OCCURRED_FLAG   1
 #define SERVER_IS_AVAILABLE_FLAG                   2
 #define UPDATE_FIRMWARE_FLAG                       4
+#define FIRST_STATUS_INFO_SENT_FLAG                8
 
 #define LONG_POLLING_REQUEST_IDLE_TIME_ON_ERROR (10000 / portTICK_RATE_MS) // 10 sec
 #define LONG_POLLING_REQUEST_DURATION_TIME (5.5 * 60 * 1000 / portTICK_RATE_MS) // 5.5 mins
@@ -34,9 +35,11 @@ char PROJECTOR_DEFERRED_REQUEST_PAYLOAD[] ICACHE_RODATA_ATTR =
       "{\"gain\":\"<1>\","
       "\"serverIsAvailable\":<2>,"
       "\"deviceName\":\"<3>\","
-      "\"errors\":\"<4>\","
-      "\"uptime\":\"<5>\","
-      "\"buildTimestamp\":\"<6>\"}";
+      "\"errors\":<4>,"
+      "\"uptime\":<5>,"
+      "\"buildTimestamp\":\"<6>\","
+      "\"freeHeapSpace\":<7>,"
+      "\"resetReason\":\"<8>\"}";
 char TURN_ON_TRUE_JSON_ELEMENT[] ICACHE_RODATA_ATTR = "\"turnOn\":true";
 char UPDATE_FIRMWARE[] ICACHE_RODATA_ATTR = "\"updateFirmware\":true";
 char FIRMWARE_UPDATE_GET_REQUEST[] ICACHE_RODATA_ATTR =

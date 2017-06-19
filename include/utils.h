@@ -1,10 +1,18 @@
-#include "esp_common.h"
+#ifndef GENERAL_UTILS
+#define GENERAL_UTILS
 
-#ifndef true // needed only for Eclipse
-   typedef unsigned char bool;
-   #define true 1
-   #define false 0
-#endif
+#include "esp_common.h"
+#include "global_definitions.h"
+#include "malloc_logger.h"
+#include "device_settings.h"
+
+#define HEXADECIMAL_ADDRESS_FORMAT "%08x"
+
+LOCAL char RESET_REASON_TEMPLATE[] ICACHE_RODATA_ATTR = "<1>\\n"
+      " Fatal exception (<2>):\\n"
+      " epc1=0x<3>, epc2=0x<4>, epc3=0x<5>, excvaddr=0x<6>, depc=0x<7>, rtn_addr=0x<8>\\n"
+      " RTC time: <9>\\n"
+      " used software: <10>";
 
 void set_flag(unsigned int *flags, unsigned int flag_value);
 void reset_flag(unsigned int *flags, unsigned int flag_value);
@@ -17,3 +25,7 @@ void pin_output_set(unsigned int pin);
 void pin_output_reset(unsigned int pin);
 bool read_output_pin_state(unsigned int pin);
 bool read_input_pin_state(unsigned int pin);
+char *generate_reset_reason();
+void set_default_wi_fi_settings();
+
+#endif
